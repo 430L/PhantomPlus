@@ -22,7 +22,7 @@ while true do
 		break
 	end
 
-	for _,Value in next, getgc(true) do
+	for _,Value in next, (getgc or get_gc)(true) do
 		if type(Value) == "table" and rawget(Value, "ScreenCull") and rawget(Value, "NetworkClient") then
 			ns__Modules = {}
 			for Name, Data in next, Value do
@@ -37,7 +37,7 @@ end
 
 if not ns__Modules then
 	getgenv().ns__PhantomWare__Executed = false
-	pcall(setfflag, "DebugRunParallelLuaOnMainThread", "True")
+	pcall(setfflag or set_fflag, "DebugRunParallelLuaOnMainThread", "True")
 	LocalPlayer:Kick("Error while accessing Game Modules, please make a ticket in the discord server immediately.\ndiscord.gg/DwRT2nH93D")
     return pcall(setclipboard, "discord.gg/DwRT2nH93D")
 elseif not ns__Modules.ReplicationInterface then
@@ -58,7 +58,7 @@ elseif not ns__Modules.ReplicationInterface then
 	end)() .. "\n}")
 
 	getgenv().ns__PhantomWare__Executed = false
-	pcall(setfflag, "DebugRunParallelLuaOnMainThread", "True")
+	pcall(setfflag or set_fflag, "DebugRunParallelLuaOnMainThread", "True")
 
     LocalPlayer:Kick("Error while accessing ReplicationInterface, please make a ticket in the discord server immediately.\ndiscord.gg/DwRT2nH93D")
     return pcall(setclipboard, "discord.gg/DwRT2nH93D")
@@ -2029,7 +2029,7 @@ Miscellaneous_ClientSessionUnlocks:AddButton({Text = "Unlock Camos", Func = func
         return Library:Notify("All camos have already been unlocked.", 3)
     end
 
-    for _,Table in next, getgc(true) do
+    for _,Table in next, (getgc or get_gc)(true) do
         if type(Table) ~= "table"  or not rawget(Table, "Mentha Spicata") or not rawget(Table, "Dove blue") then
             continue
         end
