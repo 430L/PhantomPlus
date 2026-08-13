@@ -94,6 +94,7 @@ AimingRaycastParams.FilterDescendantsInstances = {IgnoreFolder, PlayersFolder, R
 
 local TransparentRaycastParams = RaycastParams.new()
 TransparentRaycastParams.FilterType = Enum.RaycastFilterType.Exclude
+local Raycast = workspace.Raycast
 
 local BulletRaycastParams = RaycastParams.new()
 BulletRaycastParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -381,8 +382,8 @@ local function ns__require(Module)
 	if not Source then
 		local StartTime = os.clock()
 		while true do
-			if os.clock() - StartTime < 5 then
-				LocalPlayer:Kick("Module Access Timeout, please make a ticket in the discord server immediately.\ndiscord.gg/DwRT2nH93D")
+			if os.clock() - StartTime >= 5 then
+				LocalPlayer:Kick("Module Access Timeout,fi please make a ticket in the discord server immediately.\ndiscord.gg/DwRT2nH93D")
 				pcall(setclipboard, "discord.gg/DwRT2nH93D")
 				break
 			end
@@ -538,18 +539,30 @@ local function WorldToViewportPoint(Position, KeepZ)
 	return Vector2.new(Screen.X, Screen.Y), OnScreen
 end
 
+local TransparentRaycastExcluded = {}
 local function TransparentRaycast(Origin, Direction, BaseFilter)
-	local Excluded, RemainingDirection, RemainingOrigin = table.clone(BaseFilter.FilterDescendantsInstances), Direction, Origin
+	local BaseList = BaseFilter.FilterDescendantsInstances
+	local BaseCount = #BaseList
+	for Index = 1, BaseCount do
+		TransparentRaycastExcluded[Index] = BaseList[Index]
+	end
+
+	local ExcludedCount, RemainingDirection, RemainingOrigin = BaseCount, Direction, Origin
 	for _ = 1, 8 do
-		TransparentRaycastParams.FilterDescendantsInstances = Excluded
-		local Result = workspace:Raycast(RemainingOrigin, RemainingDirection, TransparentRaycastParams)
+		for Index = ExcludedCount + 1, #TransparentRaycastExcluded do
+			TransparentRaycastExcluded[Index] = nil
+		end
+
+		TransparentRaycastParams.FilterDescendantsInstances = TransparentRaycastExcluded
+		local Result = Raycast(workspace, RemainingOrigin, RemainingDirection, TransparentRaycastParams)
 		if not Result then
 			return nil
 		end
 
 		local Hit = Result.Instance
 		if Hit.Transparency > 0.9 then
-			table.insert(Excluded, Hit)
+			ExcludedCount += 1
+			TransparentRaycastExcluded[ExcludedCount] = Hit
 			local FixedDirection = Direction.Unit * 0.01
 			RemainingDirection = RemainingDirection - (Result.Position - RemainingOrigin) - FixedDirection
 			RemainingOrigin = Result.Position + FixedDirection
@@ -662,7 +675,7 @@ function CanSee(Part, Layers)
 end
 
 local RageBotCache = {}
-function RageBot_CanHit(Part, Layers)
+local function RageBot_CanHit(Part, Layers)
 	local Entry = RageBotCache[Part]
 	if Entry and Entry[2] == CanSeeFrameCounter and Entry[3] == Layers then
 		return Entry[1]
@@ -724,7 +737,7 @@ function RageBot_CanHit(Part, Layers)
 	return false
 end
 
-function GetTargetPart(Character, AimbotPart, IsWallCheckOff)
+local function GetTargetPart(Character, AimbotPart, IsWallCheckOff)
 	local Layers, Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg = Settings.Advanced_MultiPointLayers, Character.Head, Character.Torso, Character["Left Arm"], Character["Right Arm"], Character["Left Leg"], Character["Right Leg"]
 	if AimbotPart == "Head" then
 		if not Head then
@@ -781,14 +794,22 @@ function GetTargetPart(Character, AimbotPart, IsWallCheckOff)
 					end
 				end
 			else
-				for _,Part in ipairs(Name == "Arms" and {LeftArm, RightArm} or {LeftLeg, RightLeg}) do
-					if Part then
-						local Screen, OnScreen = WorldToViewportPoint(Part.Position)
-						if OnScreen then
-							local Status = CanSee(Part, Layers)
-							if IsWallCheckOff or Status then
-								return Part, Screen, Status
-							end
+				local PartA, PartB = Name == "Arms" and LeftArm or LeftLeg, Name == "Arms" and RightArm or RightLeg
+				if PartA then
+					local Screen, OnScreen = WorldToViewportPoint(PartA.Position)
+					if OnScreen then
+						local Status = CanSee(PartA, Layers)
+						if IsWallCheckOff or Status then
+							return PartA, Screen, Status
+						end
+					end
+				end
+				if PartB then
+					local Screen, OnScreen = WorldToViewportPoint(PartB.Position)
+					if OnScreen then
+						local Status = CanSee(PartB, Layers)
+						if IsWallCheckOff or Status then
+							return PartB, Screen, Status
 						end
 					end
 				end
@@ -825,7 +846,7 @@ function GetTargetPart(Character, AimbotPart, IsWallCheckOff)
 	return nil, nil, false
 end
 
-function Silent_GetClosest()
+local function Silent_GetClosest()
 	local IsWallCheckOff = not Aiming.Aimbot_WallCheck
 	local FOVRadius = Aiming.Aimbot_FOVRadius
 	local MaxScore, AimbotPart = Aiming.Aimbot_ShowFOV and FOVRadius or math.huge, Aiming.Aimbot_Part
@@ -863,36 +884,34 @@ function Silent_GetClosest()
 	return BestPosition, BestEntry, BestPart
 end
 
-local HookRegistry = {}
-local function ns__hookfunction(Register, Table, Index, Replacement, Info)
-    local Helper, Original = Info and Info.Helper, Table[Index]
-    Table[Index] = Helper and ((Info and Info.ReturnOriginal) and function(...)
+local function ns__hookfunction(Table, Index, Replacement, Info)
+    local Helper, Original, ReturnOriginal = Info and Info.Helper, Table[Index], Info and Info.ReturnOriginal
+    Table[Index] = Helper and (ReturnOriginal and function(...)
 		return Replacement(Helper, Original, ...)
 	end or function(...)
 		return Replacement(Helper, ...)
-	end) or ((Info and Info.ReturnOriginal) and function(...)
+	end) or (ReturnOriginal and function(...)
 		return Replacement(Original, ...)
 	end or Replacement)
-	HookRegistry[Index] = Register and {Table, Index, Original} or nil
     return Original
 end
-local function ns__restorefunction(Identifier)
-	local Hook = HookRegistry[Identifier]
-	if not Hook then
-		return
-	end
-	Hook[1][Hook[2]] = Hook[3]
-	HookRegistry[Identifier] = nil
-end
 
-ns__hookfunction(false, RecoilSprings, "applyImpulse", function(Original, ...)
+ns__hookfunction(FirearmObject, "computeWalkSway", function(Original, self, ...)
+	return Miscellaneous.GunMods_NoWalkSway and Original(self, 0, 0) or Original(self, ...)
+end, {ReturnOriginal = true})
+
+ns__hookfunction(FirearmObject, "computeGunSway", function(Original, self, ...)
+	return Miscellaneous.GunMods_NoGunSway and CFrame.identity or Original(self, ...)
+end, {ReturnOriginal = true})
+
+ns__hookfunction(RecoilSprings, "applyImpulse", function(Original, ...)
 	if Miscellaneous.GunMods_NoRecoil or (IsAimbotLocking and Aiming.Aimbot_Type ~= "Silent") then
 		return
 	end
 	return Original(...)
 end, {ReturnOriginal = true})
 
-ns__hookfunction(false, FirearmObject, "reload", function(Original, self, ...)
+ns__hookfunction(FirearmObject, "reload", function(Original, self, ...)
 	if IsRageBotInputActive or Miscellaneous.GunMods_InstantReload then
 		local SpareCount = self._spareCount
 		if SpareCount < 0 then
@@ -928,7 +947,35 @@ local FakeReplicationObject = nil
 local FakeThirdPersonObject = nil
 local IsAutoFiring = false
 
-ns__hookfunction(false, NetworkClient, "send", function(self, Packet, ...)
+local function ComputeAntiAimAngles(Angles)
+	local X, Y, Z = Angles.X, Angles.Y, Angles.Z
+
+	if Miscellaneous.Movement_AntiAimPitch then
+		local Addition = math.rad(Miscellaneous.Movement_AntiAimPitchAmount) - Quarter
+		X = Miscellaneous.Movement_AntiAimPitchMode == "Absolute" and Addition or math.clamp(X + Addition, NegativeQuarter, Quarter)
+	end
+
+	if Miscellaneous.Movement_AntiAimYaw then
+		local Addition = math.rad(Miscellaneous.Movement_AntiAimYawAmount)
+		Y = Miscellaneous.Movement_AntiAimYawMode == "Relative" and (Y + Addition) or Addition
+	end
+
+	if Miscellaneous.Movement_AntiAimSpinBot or Miscellaneous.Movement_AntiAimJitter then
+		local ClockTime = os.clock()
+
+		if Miscellaneous.Movement_AntiAimSpinBot then
+			Y += ((ClockTime * math.rad(Miscellaneous.Movement_AntiAimSpinSpeed)) % TwoPi) * (Miscellaneous.Movement_AntiAimSpinDirection == "Left" and 1 or -1)
+		end
+
+		if Miscellaneous.Movement_AntiAimJitter then
+			Y += (math.floor(ClockTime * Miscellaneous.Movement_AntiAimJitterSpeed) % 2 == 0) and math.pi or 0
+		end
+	end
+
+	return Vector3.new(X, Y, Z)
+end
+
+ns__hookfunction(NetworkClient, "send", function(self, Packet, ...)
 	if Packet == "flaguser" or Packet == "debug" or Packet == "logmessage" then
 		return
 	elseif Packet == "spawn" then
@@ -981,7 +1028,7 @@ ns__hookfunction(false, NetworkClient, "send", function(self, Packet, ...)
 						if Cache then
 							Current = Cache[1]
 							Old = Cache[15]
-							
+
 							if Current and Old then
 								local CurrentTime, OldTime = Old.Time, Current.Time
 								if (CurrentTime - OldTime) > 0.01 then
@@ -1023,26 +1070,7 @@ ns__hookfunction(false, NetworkClient, "send", function(self, Packet, ...)
 	elseif Packet == "repupdate" then
 		local Position, Angles,_,Time = ...
 		if Angles and Miscellaneous.Movement_AntiAimEnabled then
-			local X, Y, Z = Angles.X, Angles.Y, Angles.Z
-			if Miscellaneous.Movement_AntiAimPitch then
-				local Addition = math.rad(Miscellaneous.Movement_AntiAimPitchAmount) - Quarter
-				X = Miscellaneous.Movement_AntiAimPitchMode == "Absolute" and Addition or math.clamp(X + Addition, NegativeQuarter, Quarter)
-			end
-
-			if Miscellaneous.Movement_AntiAimYaw then
-				local Addition = math.rad(Miscellaneous.Movement_AntiAimYawAmount)
-				Y = Miscellaneous.Movement_AntiAimYawMode == "Relative" and (Y + Addition) or Addition
-			end
-
-			if Miscellaneous.Movement_AntiAimSpinBot then
-				Y += ((os.clock() * math.rad(Miscellaneous.Movement_AntiAimSpinSpeed)) % TwoPi) * (Miscellaneous.Movement_AntiAimSpinDirection == "Left" and 1 or -1)
-			end
-
-			if Miscellaneous.Movement_AntiAimJitter then
-				Y += (math.floor(os.clock() * Miscellaneous.Movement_AntiAimJitterSpeed) % 2 == 0) and math.pi or 0
-			end
-
-			Angles = Vector3.new(X, Y, Z)
+			Angles = ComputeAntiAimAngles(Angles)
 			return NetworkClientSend(self, Packet, Position, Angles, Angles * 0.99, Time)
 		end
 	elseif (Packet == "falldamage" and Miscellaneous.Movement_NoFallDamage) or (Packet == "changeCamo" and Miscellaneous.ClientSessionUnlocks_CamosUnlocked) or (Packet == "changeWeapon" and (...) == "Knife" and Miscellaneous.ClientSessionUnlocks_KnivesUnlocked) or (Packet == "changeAttachment" and Miscellaneous.ClientSessionUnlocks_AttachmentsUnlocked) then
@@ -1051,7 +1079,7 @@ ns__hookfunction(false, NetworkClient, "send", function(self, Packet, ...)
 	return NetworkClientSend(self, Packet, ...)
 end)
 
-ns__hookfunction(false, PlayerDataUtils, "getUnlocksData", function(Helper, Original, PlayerData)
+ns__hookfunction(PlayerDataUtils, "getUnlocksData", function(Helper, Original, PlayerData)
 	local Unlocks = Original(PlayerData)
 	if Miscellaneous.ClientSessionUnlocks_AttachmentsUnlocked and PlayerData == Helper() then
 		local OldUnlocks = Unlocks
@@ -1070,7 +1098,7 @@ ns__hookfunction(false, PlayerDataUtils, "getUnlocksData", function(Helper, Orig
 	return Unlocks
 end, {Helper = PlayerDataClientInterface.getPlayerData, ReturnOriginal = true})
 
-ns__hookfunction(false, PlayerDataUtils, "ownsWeapon", function(Helper, Original, Player, WeaponName)
+ns__hookfunction(PlayerDataUtils, "ownsWeapon", function(Helper, Original, Player, WeaponName)
 	return (Miscellaneous.ClientSessionUnlocks_KnivesUnlocked and Helper(WeaponName).baseWeaponData.type == "KNIFE") and true or Original(Player, WeaponName)
 end, {Helper = ns__require("ContentInterface").getWeaponSource, ReturnOriginal = true})
 
@@ -1107,7 +1135,7 @@ local CustomSounds = {
 }
 
 local PlaySoundId
-PlaySoundId = ns__hookfunction(false, AudioSystem, "playSoundId", function(AssetId, Priority, Volume, ...)
+PlaySoundId = ns__hookfunction(AudioSystem, "playSoundId", function(AssetId, Priority, Volume, ...)
 	local ShootSound = Miscellaneous.SoundOverride_ShootSound
 	if ShootSound == "None" then
 		return PlaySoundId(AssetId, Priority, Volume, ...)
@@ -1119,7 +1147,7 @@ PlaySoundId = ns__hookfunction(false, AudioSystem, "playSoundId", function(Asset
 	end
 end)
 
-ns__hookfunction(false, AudioSystem, "playSound", function(Original, SoundName, ...)
+ns__hookfunction(AudioSystem, "playSound", function(Original, SoundName, ...)
 	local Arguments = table.pack(...)
 	if Miscellaneous.SoundOverride_HitSound ~= "None" and SoundName == "hitmarker" then
 		return PlaySoundId(CustomSounds[Miscellaneous.SoundOverride_HitSound], 1, Arguments[3])
@@ -1197,7 +1225,7 @@ local function CreateBulletTracer(StartPosition, Direction)
 	})
 end
 
-ns__hookfunction(false, BulletObject, "new", function(Original, BulletData, ...)
+ns__hookfunction(BulletObject, "new", function(Original, BulletData, ...)
 	if not BulletData.onplayerhit then
 		return Original(BulletData)
 	end
@@ -1292,9 +1320,9 @@ local function OnCameraModelAdded(Model)
 	ModelHighlights[Model] = Highlight
 
 	Model.Destroying:Once(function()
-		local Highlight = ModelHighlights[Model]
-		if Highlight then
-			Highlight:Destroy()
+		local HighlightObject = ModelHighlights[Model]
+		if HighlightObject then
+			HighlightObject:Destroy()
 			ModelHighlights[Model] = nil
 		end
 		ModelBaseParts[Model] = nil
@@ -1321,7 +1349,7 @@ for _,Child in next, IgnoreFolder:GetChildren() do
 	end
 end
 
-ns__hookfunction(false, ScreenCull, "step", function(Original, ...)
+ns__hookfunction(ScreenCull, "step", function(Original, ...)
 	Original(...)
 
 	if IsThirdPersonActive then
@@ -1373,6 +1401,7 @@ DeadBodyFolder.ChildAdded:Connect(function(Child)
 
 		if RagdollMode == "Launch" then
 			Torso.AssemblyLinearVelocity = Vector3.new(math.random(-15, 15), Miscellaneous.RagdollEffects_LaunchForce, math.random(-15, 15))
+			return
 		elseif RagdollMode == "Fling" then
 			local Force = Miscellaneous.RagdollEffects_FlingForce
 			Torso.AssemblyLinearVelocity = Vector3.new(math.random(-Force, Force), math.random(0, Force), math.random(-Force, Force))
@@ -1381,18 +1410,18 @@ DeadBodyFolder.ChildAdded:Connect(function(Child)
 		end
 
 		Torso.AssemblyLinearVelocity = Vector3.new(0, Miscellaneous.RagdollEffects_FloatSpeed, 0)
-		for _,Child in next, Child:GetChildren() do
-			if Child:IsA("BasePart") then
-				local AntiGravity = ns__cloneref(Instance.new("BodyForce"))
-				AntiGravity.Name = HttpService:GenerateGUID(false)
-				AntiGravity.Force = Vector3.new(0, Child:GetMass() * workspace.Gravity, 0)
-				AntiGravity.Parent = Child
+		for _,Object in next, Child:GetChildren() do
+			if Object:IsA("BasePart") then
+				local BodyForce = ns__cloneref(Instance.new("BodyForce"))
+				BodyForce.Name = HttpService:GenerateGUID(false)
+				BodyForce.Force = Vector3.new(0, Object:GetMass() * workspace.Gravity, 0)
+				BodyForce.Parent = Object
 			end
 		end
 	end
 end)
 
-RunService.RenderStepped:Connect(function()
+RunService.PreRender:Connect(function()
 	CanSeeFrameCounter += 1
 	local PrevousFrame = CanSeeFrameCounter - 1
 
@@ -1480,23 +1509,24 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
-local function VisibilityCheck(Head, Torso, Arms, Legs)
+local function VisibilityCheck(Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg)
 	local Layers = Settings.Advanced_MultiPointLayers
 
 	if CanSee(Head, Layers) or CanSee(Torso, Layers) then
 		return true
 	end
 
-	for Index = 1, #Arms do
-		if CanSee(Arms[Index], Layers) then
-			return true
-		end
+	if LeftArm and CanSee(LeftArm, Layers) then
+		return true
 	end
-
-	for Index = 1, #Legs do
-		if CanSee(Legs[Index], Layers) then
-			return true
-		end
+	if RightArm and CanSee(RightArm, Layers) then
+		return true
+	end
+	if LeftLeg and CanSee(LeftLeg, Layers) then
+		return true
+	end
+	if RightLeg and CanSee(RightLeg, Layers) then
+		return true
 	end
 
 	return false
@@ -1524,7 +1554,7 @@ local function HandleLine(Line, FromPoint, ToPoint, Center, Angle, Color, Spin)
 end
 
 local Rendering_DrawingObjects, Rendering_Highlights = {}, {} 
-local function UpdateESP(LocalHeadPosition, Player, Entry, Head, Torso, Arms, Legs, GlobalOpacity)
+local function UpdateESP(LocalHeadPosition, Player, Entry, Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg, GlobalOpacity)
 	local HighlightGroup = Rendering_Highlights[Player]
 	if not HighlightGroup then
 		HighlightGroup = {}
@@ -1533,7 +1563,7 @@ local function UpdateESP(LocalHeadPosition, Player, Entry, Head, Torso, Arms, Le
 
 	if Visuals.EnemyESP_Chams then
 		local ChamsColor
-		if Visuals.EnemyESP_ChamsStyle == "Visible" and VisibilityCheck(Head, Torso, Arms, Legs) then
+		if Visuals.EnemyESP_ChamsStyle == "Visible" and VisibilityCheck(Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg) then
 			ChamsColor = Visuals.EnemyESP_ChamsVisibleColor
 		else
 			ChamsColor = Visuals.EnemyESP_ChamsColor
@@ -1612,6 +1642,7 @@ local function UpdateESP(LocalHeadPosition, Player, Entry, Head, Torso, Arms, Le
 		local TopScreenY = TopScreen.Y
 		local BoxHeight = BottomScreenY - TopScreenY
 		local BoxWidth = BoxHeight * 0.65
+		local Health = Entry:getHealth()
 
 		if Visuals.EnemyESP_Boxes then
 			SetProperty(Box, "Visible", true)
@@ -1635,7 +1666,7 @@ local function UpdateESP(LocalHeadPosition, Player, Entry, Head, Torso, Arms, Le
 			end
 
 			if Elements.Health then
-				Text ..= (Text ~= "" and (" [") or "[") .. tostring(math.floor(Entry:getHealth())) .. "]"
+				Text ..= (Text ~= "" and (" [") or "[") .. tostring(math.floor(Health)) .. "]"
 			end
 
 			if Elements.Distance then
@@ -1644,7 +1675,7 @@ local function UpdateESP(LocalHeadPosition, Player, Entry, Head, Torso, Arms, Le
 			end
 
 			if Elements.Visibility then
-				local Visibility = VisibilityCheck(Head, Torso, Arms, Legs) and "[Visible]" or "[Hidden]"
+				local Visibility = VisibilityCheck(Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg) and "[Visible]" or "[Hidden]"
 				Text ..= (Text ~= "" and (" " .. Visibility) or Visibility)
 			end
 
@@ -1659,7 +1690,7 @@ local function UpdateESP(LocalHeadPosition, Player, Entry, Head, Torso, Arms, Le
 			local BarHeight = math.max(24, BoxHeight * 0.9)
 			local BarX = HeadScreenX + BoxWidth * 0.5 + 5
 			local BarY = TopScreenY + (BoxHeight - BarHeight) * 0.5
-			local FillHeight = math.max(1, math.floor((BarHeight - 2) * math.clamp(Entry:getHealth() * 0.01, 0, 1)))
+			local FillHeight = math.max(1, math.floor((BarHeight - 2) * math.clamp(Health * 0.01, 0, 1)))
 
 			SetProperty(HealthbarOutline, "Visible", true)
 			SetProperty(HealthbarOutline, "Size", Vector2.new(BarWidth, BarHeight))
@@ -1864,26 +1895,10 @@ end})
 local Miscellaneous_GunMods = Tabs.Miscellaneous:AddLeftGroupbox("Gun Mods")
 
 Miscellaneous_GunMods:AddToggle("GunMods_NoWalkSway", {Text = "No Walk Sway", Default = Miscellaneous.GunMods_NoWalkSway, Callback = function(Value)
-	if not Value then
-		return ns__restorefunction("computeWalkSway")
-	end
-
-	ns__hookfunction(true, FirearmObject, "computeWalkSway", function(Original, self, ...)
-		return Original(self, 0, 0)
-	end, {ReturnOriginal = true})
-
 	UpdateTable(Miscellaneous, "GunMods_NoWalkSway", Value)
 end})
 
 Miscellaneous_GunMods:AddToggle("GunMods_NoGunSway", {Text = "No Gun Sway", Default = Miscellaneous.GunMods_NoGunSway, Callback = function(Value)
-	if not Value then
-		return ns__restorefunction("computeGunSway")
-	end
-
-	ns__hookfunction(true, FirearmObject, "computeGunSway", function(Original, self, ...)
-		return CFrame.identity
-	end, {ReturnOriginal = true})
-
 	UpdateTable(Miscellaneous, "GunMods_NoGunSway", Value)
 end})
 
@@ -2569,14 +2584,9 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 		end
 
 		local Count = #Cache
-		if Count >= 15 then
-			for Index = 15, 2, -1 do
-				Cache[Index] = Cache[Index - 1]
-			end
-		else
-			for Index = Count, 1, -1 do
-				Cache[Index + 1] = Cache[Index]
-			end
+		local Shift = math.min(Count, 14)
+		for Index = Shift, 1, -1 do
+			Cache[Index + 1] = Cache[Index]
 		end
 
 		Cache[1] = {Position = Entry._thirdPersonObject._characterModelHash.Head.Position, Time = os.clock()}
@@ -2589,6 +2599,7 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 			ThirdPersonDeltaTime += DeltaTime
 			local Position = RootPart.Position
 			ThirdPersonLastPosition = ThirdPersonLastPosition or Position
+			local Velocity = (Position - ThirdPersonLastPosition) / ThirdPersonDeltaTime
 			ThirdPersonDeltaTime = 0
 
 			if IsFakeSpawned or not FakeThirdPersonObject then
@@ -2615,27 +2626,7 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 			if FakeThirdPersonObject then
 				local Angles = CameraInterface:getActiveCamera():getAngles()
 				if Miscellaneous.Movement_AntiAimEnabled and Visuals.Camera_ThirdPersonApplyAntiAimToCharacter then
-					local X, Y, Z = Angles.X, Angles.Y, Angles.Z
-
-					if Miscellaneous.Movement_AntiAimYaw then
-						local Addition = math.rad(Miscellaneous.Movement_AntiAimYawAmount)
-						Y = Miscellaneous.Movement_AntiAimYawMode == "Relative" and (Y + Addition) or Addition
-					end
-
-					if Miscellaneous.Movement_AntiAimSpinBot then
-						Y += ((os.clock() * math.rad(Miscellaneous.Movement_AntiAimSpinSpeed)) % TwoPi) * (Miscellaneous.Movement_AntiAimSpinDirection == "Left" and 1 or -1)
-					end
-
-					if Miscellaneous.Movement_AntiAimJitter then
-						Y += (math.floor(os.clock() * Miscellaneous.Movement_AntiAimJitterSpeed) % 2 == 0) and math.pi or 0
-					end
-
-					if Miscellaneous.Movement_AntiAimPitch then
-						local Addition = math.rad(Miscellaneous.Movement_AntiAimPitchAmount) - Quarter
-						X = Miscellaneous.Movement_AntiAimPitchMode == "Absolute" and Addition or math.clamp(X + Addition, NegativeQuarter, Quarter)
-					end
-
-					Angles = Vector3.new(X, Y, Z)
+					Angles = ComputeAntiAimAngles(Angles)
 				end
 
 				FakeReplicationObject._posspring.t = Position
@@ -2645,7 +2636,7 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 
 				local ClockTime, TickTime = os.clock(), tick()
 				FakeReplicationObject._smoothReplication:receive(ClockTime, TickTime, {
-					t = TickTime, position = Position, velocity = ThirdPersonDeltaTime > 0 and (Position - ThirdPersonLastPosition) / ThirdPersonDeltaTime or Vector3.zero,
+					t = TickTime, position = Position, velocity = Velocity,
 					angles = Angles, barrelAngles = Vector3.zero, breakcount = 0
 				}, true)
 
@@ -2779,11 +2770,13 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 
 		local RageBotPart = Aiming.RageBot_Part
 		local HitboxPriorityOrder = Aiming.RageBot_HitboxPriorityOrder
-		local ShouldCreateBulletTracer = Visuals.Combat_BulletTracerColor and not Aiming.RageBot_IgnoreBulletTracers
+		local ShouldCreateBulletTracer = Visuals.Combat_BulletTracers and not Aiming.RageBot_IgnoreBulletTracers
 		local PenetrationDetection = Aiming.RageBot_WallPenetrationDetection
 		local Layers = Settings.Advanced_MultiPointLayers
 		local BulletAcceleration = PublicSettings.bulletAcceleration
 		local BulletAccelerationTerm = BulletAcceleration:Dot(BulletAcceleration)
+		local Targets = table.create(6)
+		local TargetFlags = table.create(6)
 		for EntryIndex = 1, #SortedEntries do
 			local Entry = SortedEntries[EntryIndex]
 			local Character = GetCharacterModelHash(Entry._thirdPersonObject)
@@ -2793,79 +2786,51 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 			local LeftLeg, RightLeg = Character["Left Leg"], Character["Right Leg"]
 
 			local TargetCount = 0
-			local Part1, Part2, Part3, Part4, Part5, Part6
-			local IsPart1, IsPart2, IsPart3, IsPart4, IsPart5, IsPart6 = true, true, true, true, true, true
 
 			if RageBotPart == "Head" then
 				if Head then
 					TargetCount = 1
-					Part1 = Head
+					Targets[1] = Head
+					TargetFlags[1] = true
 				end
 			elseif RageBotPart == "Torso" then
 				if Torso then
 					TargetCount = 1
-					Part1 = Torso
+					Targets[1] = Torso
+					TargetFlags[1] = true
 				end
 			elseif RageBotPart == "Priority" then
 				for _,Name in ipairs(HitboxPriorityOrder) do
 					if Name == "Head" then
 						if Head then
 							TargetCount += 1
-							if TargetCount == 1 then
-								Part1 = Head
-							elseif TargetCount == 2 then
-								Part2 = Head
-							elseif TargetCount == 3 then
-								Part3 = Head
-							elseif TargetCount == 4 then
-								Part4 = Head
-							elseif TargetCount == 5 then
-								Part5 = Head
-							else
-								Part6 = Head 
-							end
+							Targets[TargetCount] = Head
+							TargetFlags[TargetCount] = true
 						end
 					elseif Name == "Torso" then
 						if Torso then
 							TargetCount += 1
-							if TargetCount == 1 then
-								Part1 = Torso
-							elseif TargetCount == 2 then
-								Part2 = Torso
-							elseif TargetCount == 3 then
-								Part3 = Torso
-							elseif TargetCount == 4 then
-								Part4 = Torso
-							elseif TargetCount == 5 then
-								Part5 = Torso
-							else
-								Part6 = Torso
-							end
+							Targets[TargetCount] = Torso
+							TargetFlags[TargetCount] = true
 						end
 					else
-						for _,Arm in ipairs(Name == "Arms" and {LeftArm, RightArm} or {LeftLeg, RightLeg}) do
-							if not Arm then
-								continue
-							end
+						local PartA, PartB = Name == "Arms" and LeftArm or LeftLeg, Name == "Arms" and RightArm or RightLeg
+						if PartA then
 							TargetCount += 1
-							if TargetCount == 1 then
-								Part1 = Arm
-							elseif TargetCount == 2 then
-								Part2 = Arm
-							elseif TargetCount == 3 then
-								Part3 = Arm
-							elseif TargetCount == 4 then
-								Part4 = Arm
-							elseif TargetCount == 5 then
-								Part5 = Arm
-							else
-								Part6 = Arm
-							end
+							Targets[TargetCount] = PartA
+							TargetFlags[TargetCount] = true
+						end
+						if PartB then
+							TargetCount += 1
+							Targets[TargetCount] = PartB
+							TargetFlags[TargetCount] = true
 						end
 					end
 				end
 			elseif RageBotPart == "Closest" then
-				local Parts, AllDists, PartIndices = {Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg}, {}, {1, 2, 3, 4, 5, 6}
+				local Parts = {Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg}
+				local AllDists = {}
+				local PartIndices = {1, 2, 3, 4, 5, 6}
 				for Index = 1, 6 do
 					if Parts[Index] then
 						local Position = Parts[Index].Position
@@ -2880,49 +2845,26 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 					return AllDists[Distance1] < AllDists[Distance2]
 				end)
 
-				Parts = {
-					Parts[PartIndices[1]],
-					Parts[PartIndices[2]],
-					Parts[PartIndices[3]],
-					Parts[PartIndices[4]],
-					Parts[PartIndices[5]],
-					Parts[PartIndices[6]]
-				}
-
 				for Index = 1, 6 do
-					if Parts[Index] then
+					local Part = Parts[PartIndices[Index]]
+					if Part then
 						TargetCount += 1
-						if TargetCount == 1 then
-							Part1 = Parts[Index]
-						elseif TargetCount == 2 then
-							Part2 = Parts[Index]
-						elseif TargetCount == 3 then
-							Part3 = Parts[Index]
-						elseif TargetCount == 4 then
-							Part4 = Parts[Index]
-						elseif TargetCount == 5 then
-							Part5 = Parts[Index]
-						else
-							Part6 = Parts[Index]
-						end
+						Targets[TargetCount] = Part
+						TargetFlags[TargetCount] = true
 					end
 				end
-			elseif RageBotPart == "Random" then
-				Part1 = ({Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg})[math.random(1, Count)]
-				TargetCount = 1
 			end
 
 			if TargetCount == 0 then
 				TargetCount = 1
-				Part1 = Entry._receivedPosition
-				IsPart1 = false
+				Targets[1] = Entry._receivedPosition
+				TargetFlags[1] = false
 			end
 
-			local TargetList, PartList = {Part1, Part2, Part3, Part4, Part5, Part6}, {IsPart1, IsPart2, IsPart3, IsPart4, IsPart5, IsPart6}
 			local NewOrigin, NewTarget, Velocity
 
 			for TargetIndex = 1, TargetCount do
-				local TargetPart, IsPart = TargetList[TargetIndex], PartList[TargetIndex]
+				local TargetPart, IsPart = Targets[TargetIndex], TargetFlags[TargetIndex]
 				local CurrentTarget = IsPart and TargetPart.Position or TargetPart
 
 				local CurrentVelocity = GetBulletVelocity(Origin, CurrentTarget, BulletSpeed, BulletAcceleration, BulletAccelerationTerm)
@@ -2949,7 +2891,7 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 					local SpareCount, MagSize = Weapon._spareCount, WeaponData.magsize
 					if SpareCount >= MagSize then
 						Weapon._magCount = MagSize
-						Weapon._spareCount -= MagCount
+						Weapon._spareCount = SpareCount - Weapon._magCount
 					else
 						Weapon._magCount = SpareCount
 						Weapon._spareCount = 0
@@ -2977,19 +2919,20 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 				end
 
 				local UniqueId = Weapon.uniqueId
+				local CurrentTime = NetworkClient.getTime()
 				NetworkClientSend(NetworkClient, "newbullets", UniqueId, {
 					camerapos = Origin,
 					firepos = NewOrigin,
 					velocity = Velocity,
 					bullets = Bullets,
-				}, NetworkClient.getTime())
+				}, CurrentTime)
 
 				local Player = Entry._player
 				if IsSinglePellet then
-					NetworkClientSend(NetworkClient, "bullethit", UniqueId, Player, NewTarget, "Head", Bullets[1][2], NetworkClient.getTime())
+					NetworkClientSend(NetworkClient, "bullethit", UniqueId, Player, NewTarget, "Head", Bullets[1][2], CurrentTime)
 				else
 					for Index = 1, PelletCount do
-						NetworkClientSend(NetworkClient, "bullethit", UniqueId, Player, NewTarget, "Head", Bullets[Index][2], NetworkClient.getTime())
+						NetworkClientSend(NetworkClient, "bullethit", UniqueId, Player, NewTarget, "Head", Bullets[Index][2], CurrentTime)
 					end
 				end
 
@@ -3036,8 +2979,11 @@ end)
 
 local FOVCircle = CreateDrawing("Circle", {Visible = false, Filled = false, Color = Aiming.Aimbot_FOVColor, Position = ScreenCenter, Thickness = 1})
 local TargetTracer = CreateDrawing("Line", {Visible = false, Color = Aiming.Aimbot_TargetTracerColor, Thickness = 1.5})
-local LastESPUpdateTime, ns__mousemoverel = 0, mousemoverel or function() end
-RunService.RenderStepped:Connect(function()
+local LastESPUpdateTime, ns__mousemoverel = 0, mousemoverel or function(...)
+	return (...)
+end
+
+RunService.PreRender:Connect(function()
 	local Now, LocalHeadPosition = os.clock(), GetLocalPosition()
 	table.clear(CanSeeCache)
 
@@ -3193,9 +3139,7 @@ RunService.RenderStepped:Connect(function()
 					return ClearESP(Player)
 				end
 				local Character = Entry._thirdPersonObject._characterModelHash
-				UpdateESP(LocalHeadPosition, Player, Entry, Character.Head, Character.Torso, {Character["Left Arm"], Character["Right Arm"]}, {
-					Character["Left Leg"], Character["Right Leg"]
-				}, GlobalOpacity)
+				UpdateESP(LocalHeadPosition, Player, Entry, Character.Head, Character.Torso, Character["Left Arm"], Character["Right Arm"], Character["Left Leg"], Character["Right Leg"], GlobalOpacity)
 			end)
 		end
 	else
@@ -3323,15 +3267,11 @@ RunService.RenderStepped:Connect(function()
 					GrenadeTrajectory3DMarker.CFrame = CFrame.new(FinalPoint)
 					GrenadeTrajectory3DMarker.Visible = true
 
-					if GrenadeTrajectory2DLines then
-						for _,Line in ipairs(GrenadeTrajectory2DLines) do
-							Line.Visible = false
-						end
+					for _,Line in ipairs(GrenadeTrajectory2DLines) do
+						Line.Visible = false
 					end
 
-					if GrenadeTrajectory2DMarker then
-						GrenadeTrajectory2DMarker.Visible = false
-					end
+					GrenadeTrajectory2DMarker.Visible = false
 				else
 					local SegmentsNeeded = math.max(0, PointCount - 1)
 					while #GrenadeTrajectory2DLines < SegmentsNeeded do
@@ -3369,40 +3309,27 @@ RunService.RenderStepped:Connect(function()
 						GrenadeTrajectory2DMarker.Visible = false
 					end
 
-					if GrenadeTrajectory3DSegments then
-						for _,Segment in ipairs(GrenadeTrajectory3DSegments) do
-							Segment.Beam.Transparency = NumberSequence.new(1)
-						end
+					for _,Segment in ipairs(GrenadeTrajectory3DSegments) do
+						Segment.Beam.Transparency = NumberSequence.new(1)
 					end
 
-					if GrenadeTrajectory3DMarker then
-						GrenadeTrajectory3DMarker.Visible = false
-					end
+					GrenadeTrajectory3DMarker.Visible = false
 				end
 				return
 			end
 		end
 	end
 
-	if GrenadeTrajectory2DLines then
-		for _,Line in ipairs(GrenadeTrajectory2DLines) do
-			Line.Visible = false
-		end
+	for _,Line in ipairs(GrenadeTrajectory2DLines) do
+		Line.Visible = false
 	end
 
-	if GrenadeTrajectory3DSegments then
-		for _,Segment in ipairs(GrenadeTrajectory3DSegments) do
-			Segment.Beam.Transparency = NumberSequence.new(1)
-		end
+	for _,Segment in ipairs(GrenadeTrajectory3DSegments) do
+		Segment.Beam.Transparency = NumberSequence.new(1)
 	end
 
-	if GrenadeTrajectory2DMarker then
-		GrenadeTrajectory2DMarker.Visible = false
-	end
-
-	if GrenadeTrajectory3DMarker then
-		GrenadeTrajectory3DMarker.Visible = false
-	end
+	GrenadeTrajectory2DMarker.Visible = false
+	GrenadeTrajectory3DMarker.Visible = false
 end)
 
 Library:Toggle()
@@ -3410,10 +3337,9 @@ Library:Toggle()
 pcall(function()
 	local Request = not isfile("NikoletoScripts/PhantomWare/Cache/Invite.nscache") and (httprequest or http_request or request)
 	if Request then
-		local HttpService = game:GetService("HttpService")
-		if pcall(Request, {Url = "http://127.0.0.1:6463/rpc?v=1",  Method = "POST", Headers = {
-			["Content-Type"] = "application/json", Origin = "https://discord.com"
-		}, Body = HttpService:JSONEncode({cmd = "INVITE_BROWSER", nonce = HttpService:GenerateGUID(false), args = {code = "DwRT2nH93D"}})
+		if pcall(Request, {
+			Url = "http://127.0.0.1:6463/rpc?v=1",  Method = "POST", Headers = {["Content-Type"] = "application/json", Origin = "https://discord.com"},
+			Body = HttpService:JSONEncode({cmd = "INVITE_BROWSER", nonce = HttpService:GenerateGUID(false), args = {code = "DwRT2nH93D"}})
 		}) then
 			writefile("NikoletoScripts/PhantomWare/Cache/Invite.nscache", "DwRT2nH93D")
 		end
