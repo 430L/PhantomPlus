@@ -19,10 +19,7 @@ end
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
-for Reason, Value in {
-    ["Missing function getgenv"] = getgenv, ["Missing Drawing Environment"] = Drawing and Drawing.new,
-    ["Missing file functions"] = listfiles and makefolder and writefile and readfile and delfile and isfile and isfolder
-} do
+for Reason, Value in {["Missing function getgenv"] = getgenv, ["Missing file functions"] = listfiles and makefolder and writefile and readfile and delfile and isfile and isfolder} do
     if not Value then
         LocalPlayer:Kick("Exploit not supported.\nReason: " .. Reason)
         return
@@ -69,6 +66,9 @@ end
 local Getgc, Getfflag, Setfflag = getgc or get_gc, getfflag or get_fflag, setfflag or set_fflag
 for Function, Value in {["getgc"] = Getgc, ["getfflag"] = Getfflag, ["setfflag"] = Setfflag} do
     if not Value then
+        if Function == "getgc" and typeof(getrenv or get_renv) == "function" then
+            continue
+        end
         return LocalPlayer:Kick("Exploit not supported.\nReason: Missing function " .. Function)
     end
 end
@@ -85,53 +85,6 @@ end
 
 if tostring(DebugRunParallelLuaOnMainThread):lower() == "true" then
     return loadstring(game:HttpGet("https://raw.githubusercontent.com/nikoladhima/PhantomWare/refs/heads/main/core/Main.luau"))()
-end
-
-local function Teleport()
-    local clonerefFunction = cloneref or clone_ref or clonereference or clone_reference
-    local function ns__cloneref(Object)
-        if not clonerefFunction then
-            return Object
-        end
-        local ObjectSuccess, Result = pcall(clonerefFunction, Object)
-        return ObjectSuccess and Result or Object
-    end
-
-    local function Create(Type, Parent, Properties, ...)
-        local Object = ns__cloneref(Instance.new(Type))
-
-        if Properties then
-            for Property, Value in next, Properties do
-                Object[Property] = Value
-            end
-        end
-
-        if Parent then
-            Object.Parent = Parent
-        end
-
-        for _,Child in next, {...} do
-            Child.Parent = Object
-        end
-
-        return Object
-    end
-
-    local WaitingStatus = Create("TextLabel", Create("ScreenGui", ns__cloneref(game:GetService("CoreGui")), {IgnoreGuiInset = true, ResetOnSpawn = false}), {
-        Size = UDim2.fromOffset(400, 100), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.fromRGB(30, 30, 35),
-        BackgroundTransparency = 0.15, TextColor3 = Color3.new(1, 1, 1), TextScaled = true,  Font = Enum.Font.GothamBold, Text = ""
-    }, Create("UICorner", nil, {CornerRadius = UDim.new(0, 12)}), Create("UIStroke", nil, {Color = Color3.fromRGB(
-        90, 90, 100
-    ), Thickness = 1, Transparency = 0.3}), Create("UIPadding", nil, {PaddingLeft = UDim.new(0, 16), PaddingRight = UDim.new(0, 16), PaddingTop = UDim.new(
-        0, 12
-    ), PaddingBottom = UDim.new(0, 12)}))
-
-    for Index = 10, 1, -1 do
-        WaitingStatus.Text = "Teleporting in " .. Index .. " " .. (Index < 2 and "second" or "seconds") .. ".\nPlease execute the script again after you load."
-        task.wait(1)
-    end
-
-    game:GetService("TeleportService"):Teleport(game.PlaceId)
 end
 
 Setfflag("DebugRunParallelLuaOnMainThread", "True")
@@ -154,6 +107,6 @@ if QueueOnTeleport then
 
         loadstring(game:HttpGet("https://raw.githubusercontent.com/nikoladhima/PhantomWare/refs/heads/main/Loader.luau"))()
     ]])
-    return pcall(Teleport)
 end
-pcall(Teleport)
+task.wait(1)
+game:GetService("TeleportService"):Teleport(game.PlaceId)
