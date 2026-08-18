@@ -3,7 +3,7 @@ if getgenv().ns__PhantomWare__Executed then
 end
 
 getgenv().ns__PhantomWare__Executed = true
-pcall(clearteleportqueue or clear_teleport_queue)
+pcall(clearteleportqueue or clear_teleport_queue or clearqueueonteleport)
 
 local Players = game:GetService("Players")
 local LocalPlayer = (function()
@@ -11,57 +11,76 @@ local LocalPlayer = (function()
 	return (LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")):WaitForChild("MenuScreenGui", 9e9) and LocalPlayer
 end)()
 
-local ExecutorName, ns__Modules, ns__Count = identifyexecutor and identifyexecutor() or (getexecutorname and getexecutorname()), nil, 0
-while true do
-	if ns__Count >= 10 then
-		break
-	end
-
-	local ReplicationInterface = ns__Modules and ns__Modules.ReplicationInterface
-	if ReplicationInterface and ReplicationInterface.operateOnAllEntries then
-		break
-	end
-
-	for _,Value in next, (getgc or get_gc)(true) do
-		if type(Value) == "table" and rawget(Value, "ScreenCull") and rawget(Value, "NetworkClient") then
-			ns__Modules = {}
-			for Name, Data in next, Value do
-				ns__Modules[Name] = type(Data) == "table" and Data.module or Data
-			end
-		end
-	end
-
-	ns__Count += 1
-	task.wait(0.5)
+local ns__require
+if typeof(getrenv or get_renv) == "function" then
+	local Success, Environment = pcall(getrenv or get_renv)
+	ns__require = Success and Environment.shared and Environment.shared.require
 end
 
-if not ns__Modules then
+local ns__Modules, ExecutorName = nil, identifyexecutor and identifyexecutor() or (getexecutorname and getexecutorname())
+if typeof(ns__require) ~= "function" then
+	local ns__Count = 0
+	while true do
+		if ns__Count >= 10 then
+			break
+		end
+
+		local ReplicationInterface = ns__Modules and ns__Modules.ReplicationInterface
+		if ReplicationInterface and ReplicationInterface.operateOnAllEntries then
+			break
+		end
+
+		for _,Value in next, (getgc or get_gc)(true) do
+			if type(Value) == "table" and rawget(Value, "ScreenCull") and rawget(Value, "NetworkClient") then
+				ns__Modules = {}
+				for Name, Data in next, Value do
+					ns__Modules[Name] = type(Data) == "table" and Data.module or Data
+				end
+			end
+		end
+
+		ns__Count += 1
+		task.wait(0.5)
+	end
+
+	if not ns__Modules  then
+		getgenv().ns__PhantomWare__Executed = false
+		pcall(setfflag or set_fflag, "DebugRunParallelLuaOnMainThread", "True")
+		LocalPlayer:Kick("Error while accessing Game Modules, try rejoining through the desktop app, if this issue persists, please make a ticket in the discord server immediately.\ndiscord.gg/DwRT2nH93D" .. (ExecutorName and (ExecutorName .. " | ") or ""))
+		return pcall(setclipboard, "discord.gg/DwRT2nH93D")
+	end
+
+	ns__require = function(Name)
+		return ns__Modules[Name]
+	end
+elseif not ns__require then
 	getgenv().ns__PhantomWare__Executed = false
 	pcall(setfflag or set_fflag, "DebugRunParallelLuaOnMainThread", "True")
-	LocalPlayer:Kick("Error while accessing Game Modules, please make a ticket in the discord server immediately.\ndiscord.gg/DwRT2nH93D")
-    return pcall(setclipboard, "discord.gg/DwRT2nH93D")
-elseif not ns__Modules.ReplicationInterface then
-	writefile("NikoletoScripts/PhantomWare/Logs/Log_" .. os.date("%Y-%m-%d_%H-%M-%S") .. ".nslog", "[" .. (ExecutorName or "Unknown") .. " | " .. os.date(
-		"%Y-%m-%d | %H:%M:%S"
-	) .. "] Module Dump (" .. (function()
-		local Count = 0
-		for _ in next, ns__Modules do
-			Count += 1
-		end
-		return tostring(Count)
-	end)() .. "): {\n" .. (function()
-		local Text = {}
-		for Name, Data in next, ns__Modules do
-			table.insert(Text, "    " .. tostring(Name) .. " = " .. (type(Data) == "table" and "{module = " .. (Data.module or "<nil>") .. "}" or tostring(Data)))
-		end
-		return table.concat(Text, ",\n")
-	end)() .. "\n}")
+	LocalPlayer:Kick("Error while accessing Game Modules, try rejoining through the desktop app, if this issue persists, please make a ticket in the discord server immediately.\ndiscord.gg/DwRT2nH93D" .. (ExecutorName and (ExecutorName .. " | ") or ""))
+	return pcall(setclipboard, "discord.gg/DwRT2nH93D")
+end
 
-	getgenv().ns__PhantomWare__Executed = false
-	pcall(setfflag or set_fflag, "DebugRunParallelLuaOnMainThread", "True")
+local function GetModule(Module)
+	local Source = ns__require(Module)
+	if not Source then
+		local StartTime = os.clock()
+		while true do
+			if os.clock() - StartTime >= 4 then
+				LocalPlayer:Kick("Module Access Timeout, please make a ticket in the discord server immediately.\ndiscord.gg/DwRT2nH93D\nDebug Info: " .. tostring(ExecutorName) .. " | " .. (ns__Modules and "Module Cache" or "Require Function"))
+				pcall(setclipboard, "discord.gg/DwRT2nH93D")
+				break
+			end
 
-    LocalPlayer:Kick("Error while accessing ReplicationInterface, please make a ticket in the discord server immediately.\ndiscord.gg/DwRT2nH93D")
-    return pcall(setclipboard, "discord.gg/DwRT2nH93D")
+			local CurrentSource = ns__require(Module)
+			if CurrentSource then
+				Source = CurrentSource
+				break
+			end
+
+			task.wait()
+		end
+	end
+	return Source
 end
 
 local clonerefFunction = cloneref or clone_ref or clonereference or clone_reference
@@ -82,19 +101,16 @@ local Lighting = game:GetService("Lighting")
 local CoreGui = ns__cloneref(game:GetService("CoreGui"))
 local Terrain = ns__cloneref(workspace.Terrain)
 
-local PlayersFolder = workspace:WaitForChild("Players", 9e9)
-local IgnoreFolder = workspace:WaitForChild("Ignore", 9e9) 
+local IgnoreFolder = workspace:WaitForChild("Ignore", 9e9)
 local DeadBodyFolder = IgnoreFolder:WaitForChild("DeadBody", 9e9)
-local RootsFolder = workspace:WaitForChild("Roots", 9e9)
 local Camera = workspace.CurrentCamera or workspace:WaitForChild("Camera")
 
 local AimingRaycastParams = RaycastParams.new()
 AimingRaycastParams.FilterType = Enum.RaycastFilterType.Exclude
-AimingRaycastParams.FilterDescendantsInstances = {IgnoreFolder, PlayersFolder, RootsFolder, Camera, Terrain}
+AimingRaycastParams.FilterDescendantsInstances = {IgnoreFolder, workspace:WaitForChild("Players", 9e9), workspace:WaitForChild("Roots", 9e9), Camera, Terrain}
 
 local TransparentRaycastParams = RaycastParams.new()
 TransparentRaycastParams.FilterType = Enum.RaycastFilterType.Exclude
-local Raycast = workspace.Raycast
 
 local BulletRaycastParams = RaycastParams.new()
 BulletRaycastParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -161,6 +177,7 @@ local IsAimbotTargetVisible = false
 
 local RageBotNextShot = 0
 local IsRageBotInputActive = false
+local BodyParts = {"Head", "Torso", "Arms", "Legs"}
 
 local Aiming = {
 	Aimbot_Enabled = false,
@@ -168,7 +185,7 @@ local Aiming = {
 
 	Aimbot_Type = "Camera",
 	Aimbot_Part = "Head",
-	Aimbot_PartPriorityOrder = {"Head", "Torso", "Arms", "Legs"},
+	Aimbot_PartPriorityOrder = BodyParts,
 
 	Aimbot_AutoFire = false,
 	Aimbot_WallCheck = false,
@@ -181,6 +198,10 @@ local Aiming = {
 	Aimbot_FOVOpacity = 0.5,
 	Aimbot_FOVRadius = 150,
 
+	Aimbot_SilentHitchance = 100,
+	Aimbot_SilentSwitchDelay = 0,
+	Aimbot_AutoWall = false,
+
 	Aimbot_TargetTracer = true,
 	Aimbot_TargetTracerColor = Color3.fromRGB(255, 255, 255),
 
@@ -188,7 +209,7 @@ local Aiming = {
 	RageBot_Keybind = "None",
 
 	RageBot_Part = "Head",
-	RageBot_HitboxPriorityOrder = {"Head", "Torso", "Arms", "Legs"},
+	RageBot_HitboxPriorityOrder = BodyParts,
 
 	RageBot_WallPenetrationDetection = true,
 	RageBot_IgnoreBulletTracers = false
@@ -197,6 +218,7 @@ local Aiming = {
 local IsThirdPersonActive = false
 local Visuals = {
 	EnemyESP_MasterEnabled = true,
+	EnemyESP_MasterEnabled_Keybind = "None",
 	EnemyESP_MasterOpacity = 100,
 
 	EnemyESP_Chams = false,
@@ -229,6 +251,10 @@ local Visuals = {
 	EnemyESP_DotColor = Color3.fromRGB(255, 255, 255),
 	EnemyESP_DotSize = 3,
 
+	EnemyESP_Skeletons = false,
+	EnemyESP_SkeletonsColor = Color3.fromRGB(255, 255, 255),
+	EnemyESP_SkeletonsThickness = 1.5,
+
 	Combat_BulletTracers = false,
 	Combat_BulletTracerColor = Color3.fromRGB(255, 255, 255),
 	Combat_BulletTracerAlpha = 0.85,
@@ -258,6 +284,9 @@ local Visuals = {
 
 	Combat_RadarHack = false,
 
+	Camera_FOVModificationEnabled = false,
+	Camera_FOVValue = 120,
+
 	Camera_ThirdPersonView = false,
 	Camera_ThirdPersonView_Keybind = "None",
 	Camera_ThirdPersonShowCharacter = false,
@@ -268,16 +297,13 @@ local Visuals = {
 	Camera_ThirdPersonOffsetZ = 7,
 	Camera_ThirdPersonCameraCollision = true,
 
-	Camera_FOVModificationEnabled = false,
-	Camera_FOVValue = 120,
-
 	Lighting_ModifyLighting = false,
-	Lighting_Ambient = Color3.fromRGB(255, 255, 255),
-	Lighting_OutdoorAmbient = Color3.fromRGB(255, 255, 255),
-	Lighting_ExposureCompensation = 0,
-	Lighting_EnvironmentDiffuseScale = 0,
-	Lighting_EnvironmentSpecularScale = 0,
-	Lighting_ShadowSoftness = 1,
+	Lighting_Ambient = Color3.fromRGB(150, 150, 150),
+	Lighting_OutdoorAmbient = Color3.fromRGB(150, 150, 150),
+	Lighting_ExposureCompensation = 0.5,
+	Lighting_EnvironmentDiffuseScale = 0.5,
+	Lighting_EnvironmentSpecularScale = 0.5,
+	Lighting_ShadowSoftness = 0.5,
 
 	Lighting_Flashlight = false,
 	Lighting_FlashlightColor = Color3.fromRGB(255, 255, 255),
@@ -304,22 +330,30 @@ local Miscellaneous = {
 	Movement_NoFallDamage = false,
 	Movement_BunnyHop = false,
 
+	Movement_Speed = false,
+	Movement_SpeedAmount = 16,
+	Movement_Fly = false,
+	Movement_FlySpeed = 16,
+
 	Movement_AntiAimEnabled = false,
+	Movement_AntiAimEnabled_Keybind = "None",
 
 	Movement_AntiAimYaw = false,
 	Movement_AntiAimYawAmount = 180,
-	Movement_AntiAimYawMode = "Relative",
+	Movement_AntiAimYawMode = "Custom - Relative",
+	Movement_AntiAimYawSpeed = 5,
 
 	Movement_AntiAimPitch = false,
-	Movement_AntiAimPitchAmount = 180,
-	Movement_AntiAimPitchMode = "Relative",
+	Movement_AntiAimPitchAmount = 90,
+	Movement_AntiAimPitchMode = "Custom - Relative",
+	Movement_AntiAimPitchSpeed = 5,
 
 	Movement_AntiAimSpinBot = false,
 	Movement_AntiAimSpinSpeed = 360,
 	Movement_AntiAimSpinDirection = "Right",
 
 	Movement_AntiAimJitter = false,
-	Movement_AntiAimJitterSpeed = 6,
+	Movement_AntiAimJitterAmount = 30,
 
 	HitLogs_Enabled = false,
 	HitLogs_ShowDamage = false,
@@ -341,9 +375,6 @@ local Miscellaneous = {
 }
 
 local Settings = {
-	Advanced_ESPFramerateCap = false,
-	Advanced_ESPFPSCapValue = 360,
-
 	Advanced_MultiPointEnabled = true,
 	Advanced_MultiPointScale = 2,
 	Advanced_MultiPointLayers = 2
@@ -363,48 +394,26 @@ local LightingCache = {
 local MovementCache = table.create(Players.MaxPlayers)
 
 local function RefreshLighting(Revert)
-	if Revert then
-		for Property, OriginalValue in next, LightingCache.OriginalValues do
-			Lighting[Property] = OriginalValue
-		end
-	else
+	if not Revert then
 		Lighting.Ambient = Visuals.Lighting_Ambient
 		Lighting.OutdoorAmbient = Visuals.Lighting_OutdoorAmbient
 		Lighting.ExposureCompensation = Visuals.Lighting_ExposureCompensation
 		Lighting.EnvironmentDiffuseScale = Visuals.Lighting_EnvironmentDiffuseScale
 		Lighting.EnvironmentSpecularScale = Visuals.Lighting_EnvironmentSpecularScale
 		Lighting.ShadowSoftness = Visuals.Lighting_ShadowSoftness
+		return
+	end
+
+	for Property, OriginalValue in next, LightingCache.OriginalValues do
+		Lighting[Property] = OriginalValue
 	end
 end
 
-local function ns__require(Module)
-	local Source = ns__Modules[Module]
-	if not Source then
-		local StartTime = os.clock()
-		while true do
-			if os.clock() - StartTime >= 5 then
-				LocalPlayer:Kick("Module Access Timeout,fi please make a ticket in the discord server immediately.\ndiscord.gg/DwRT2nH93D")
-				pcall(setclipboard, "discord.gg/DwRT2nH93D")
-				break
-			end
-
-			local CurrentSource = ns__Modules[Module]
-			if CurrentSource then
-				Source = CurrentSource
-				break
-			end
-
-			task.wait()
-		end
-	end
-	return Source
-end
-
-local WeaponControllerInterface = ns__require("WeaponControllerInterface")
-local PlayerDataClientInterface = ns__require("PlayerDataClientInterface")
-local PlayerStatusInterface = ns__require("PlayerStatusInterface")
-local ReplicationInterface = ns__require("ReplicationInterface")
-local CharacterInterface = ns__require("CharacterInterface")
+local WeaponControllerInterface = GetModule("WeaponControllerInterface")
+local PlayerDataClientInterface = GetModule("PlayerDataClientInterface")
+local PlayerStatusInterface = GetModule("PlayerStatusInterface")
+local ReplicationInterface = GetModule("ReplicationInterface")
+local CharacterInterface = GetModule("CharacterInterface")
 local _,CameraInterface = coroutine.resume(coroutine.create(function(CameraInterface)
 	pcall(function()
 		local FunctionEnvironment = getfenv(CameraInterface.setCameraType)
@@ -412,22 +421,21 @@ local _,CameraInterface = coroutine.resume(coroutine.create(function(CameraInter
 		FunctionEnvironment.print = function() end
 	end)
 	return CameraInterface
-end), ns__require("CameraInterface"))
+end), GetModule("CameraInterface"))
 
-local ReplicationObject = ns__require("ReplicationObject")
-local PlayerDataUtils = ns__require("PlayerDataUtils")
-local PublicSettings = ns__require("PublicSettings")
-local RecoilSprings = ns__require("RecoilSprings")
-local FirearmObject = ns__require("FirearmObject")
-local NetworkClient = ns__require("NetworkClient")
-local BulletObject = ns__require("BulletObject")
-local AudioSystem = ns__require("AudioSystem")
-local BulletCheck = ns__require("BulletCheck")
-local ScreenCull = ns__require("ScreenCull")
-local MuzzleFlash = ns__require("Effects").muzzleflash
-local FireImpulse = ns__require("HudCrosshairsInterface").fireImpulse
+local PlayerDataUtils = GetModule("PlayerDataUtils")
+local PublicSettings = GetModule("PublicSettings")
+local FirearmObject = GetModule("FirearmObject")
+local NetworkClient = GetModule("NetworkClient")
+local CharacterObject = GetModule("CharacterObject")
+local AudioSystem = GetModule("AudioSystem")
+local BulletCheck = GetModule("BulletCheck")
 
+local MuzzleFlash = GetModule("Effects").muzzleflash
+local FireImpulse = GetModule("HudCrosshairsInterface").fireImpulse
+local GetGameClockTime = GetModule("GameClock").getTime
 local NetworkClientSend = NetworkClient.send
+
 local GetLocalCharacter = CharacterInterface.getCharacterObject
 local GetActiveCamera = CameraInterface.getActiveCamera
 local PlayGameSound = AudioSystem.play
@@ -440,10 +448,6 @@ local function GetActiveWeapon()
 	if ActiveWeaponController then
 		return ActiveWeaponController:getActiveWeapon()
 	end
-end
-
-local function GetCharacterModelHash(ThirdPersonObject)
-	return ThirdPersonObject and ThirdPersonObject._characterModelHash
 end
 
 local LocalHead = nil
@@ -532,7 +536,7 @@ local ScreenXCenter, ScreenYCenter = ViewportSizeX * 0.5, ViewportSizeY * 0.5
 local ScreenBottom, ScreenTop = Vector2.new(ScreenXCenter, ViewportSizeY), Vector2.new(ScreenXCenter, 0)
 local ScreenCenter = Vector2.new(ScreenXCenter, ScreenYCenter)
 local ScreenCenterX, ScreenCenterY = ScreenCenter.X, ScreenCenter.Y
-local TwoPi, Quarter, NegativeQuarter = math.pi * 2, math.pi * 0.5, -(math.pi * 0.5)
+local TwoPi, Quarter = math.pi * 2, math.pi * 0.5
 
 local function WorldToViewportPoint(Position, KeepZ)
 	local Screen, OnScreen = Camera:WorldToViewportPoint(Position)
@@ -554,9 +558,9 @@ local function TransparentRaycast(Origin, Direction, BaseFilter)
 		end
 
 		TransparentRaycastParams.FilterDescendantsInstances = TransparentRaycastExcluded
-		local Result = Raycast(workspace, RemainingOrigin, RemainingDirection, TransparentRaycastParams)
+		local Result = workspace:Raycast(RemainingOrigin, RemainingDirection, TransparentRaycastParams)
 		if not Result then
-			return nil
+			return
 		end
 
 		local Hit = Result.Instance
@@ -571,7 +575,20 @@ local function TransparentRaycast(Origin, Direction, BaseFilter)
 
 		return Result
 	end
-	return nil
+end
+
+local function DrawBone(Line, PointA, PointB)
+	if PointA and PointB then
+		local ScreenA, OnA = WorldToViewportPoint(PointA)
+		local ScreenB, OnB = WorldToViewportPoint(PointB)
+		if OnA and OnB then
+			SetProperty(Line, "From", ScreenA)
+			SetProperty(Line, "To", ScreenB)
+			SetProperty(Line, "Visible", true)
+			return
+		end
+	end
+	SetProperty(Line, "Visible", false)
 end
 
 local MultiPointCache = {}
@@ -610,7 +627,7 @@ local function GetCanSeeCache(Result, Layers)
 	return {Result, CanSeeFrameCounter, Layers}
 end
 
-function CanSee(Part, Layers)
+local function CanSee(Part, Layers)
 	local Entry = CanSeeCache[Part]
 	if Entry and Entry[2] == CanSeeFrameCounter and Entry[3] == Layers then
 		return Entry[1]
@@ -627,7 +644,7 @@ function CanSee(Part, Layers)
 
 	if not Settings.Advanced_MultiPointEnabled then
 		CanSeeCache[Part] = GetCanSeeCache(false, Layers)
-		return false
+		return
 	end
 
 	local PartCFrame = Part.CFrame
@@ -636,7 +653,7 @@ function CanSee(Part, Layers)
 
 	if ObjectMagnitude <= 1e-6 then
 		CanSeeCache[Part] = GetCanSeeCache(false, Layers)
-		return false
+		return
 	end
 
 	local ViewDirection = ObjectDelta * (1 / ObjectMagnitude)
@@ -671,11 +688,10 @@ function CanSee(Part, Layers)
 	end
 
 	CanSeeCache[Part] = GetCanSeeCache(false, Layers)
-	return false
 end
 
 local RageBotCache = {}
-local function RageBot_CanHit(Part, Layers)
+local function RageBot_CanHit(Part, Layers, HitboxSize)
 	local Entry = RageBotCache[Part]
 	if Entry and Entry[2] == CanSeeFrameCounter and Entry[3] == Layers then
 		return Entry[1]
@@ -692,7 +708,7 @@ local function RageBot_CanHit(Part, Layers)
 
 	if not Settings.Advanced_MultiPointEnabled then
 		RageBotCache[Part] = GetCanSeeCache(false, Layers)
-		return false
+		return
 	end
 
 	local PartCFrame = Part.CFrame
@@ -701,14 +717,13 @@ local function RageBot_CanHit(Part, Layers)
 
 	if ObjectMagnitude <= 1e-6 then
 		RageBotCache[Part] = GetCanSeeCache(false, Layers)
-		return false
+		return
 	end
 
 	local ViewDirection = ObjectDelta * (1 / ObjectMagnitude)
 	local ViewDirectionX, ViewDirectionY, ViewDirectionZ = ViewDirection.X, ViewDirection.Y, ViewDirection.Z
 
-	local HalfSize = Part.Size * 0.5
-	local HalfSizeX, HalfSizeY, HalfSizeZ = HalfSize.X, HalfSize.Y, HalfSize.Z
+	local HalfSizeX, HalfSizeY, HalfSizeZ = HitboxSize.X, HitboxSize.Y, HitboxSize.Z
 	local Right, Up, Look = PartCFrame.RightVector, PartCFrame.UpVector, PartCFrame.LookVector
 
 	local Offsets = GetOffsets(Settings.Advanced_MultiPointScale)
@@ -734,7 +749,6 @@ local function RageBot_CanHit(Part, Layers)
 	end
 
 	RageBotCache[Part] = GetCanSeeCache(false, Layers)
-	return false
 end
 
 local function GetTargetPart(Character, AimbotPart, IsWallCheckOff)
@@ -769,7 +783,7 @@ local function GetTargetPart(Character, AimbotPart, IsWallCheckOff)
 		if IsWallCheckOff or Status then
 			return Torso, Screen, Status 
 		end
-	
+
 		return nil, nil, false
 	elseif AimbotPart == "Priority" then
 		for _,Name in ipairs(Aiming.Aimbot_PartPriorityOrder) do
@@ -846,10 +860,10 @@ local function GetTargetPart(Character, AimbotPart, IsWallCheckOff)
 	return nil, nil, false
 end
 
-local function Silent_GetClosest()
+local function Silent_GetClosest(PartName, PreferredPlayer)
 	local IsWallCheckOff = not Aiming.Aimbot_WallCheck
-	local FOVRadius = Aiming.Aimbot_FOVRadius
-	local MaxScore, AimbotPart = Aiming.Aimbot_ShowFOV and FOVRadius or math.huge, Aiming.Aimbot_Part
+	local FOVRadius = Aiming.Aimbot_ShowFOV and Aiming.Aimbot_FOVRadius or math.huge
+	local MaxScore, AimbotPart = math.huge, PartName or Aiming.Aimbot_Part
 	local CenterX, CenterY, LocalHeadPosition = ScreenCenter.X, ScreenCenter.Y, GetLocalPosition()
 	local BestPosition, BestEntry, BestPart
 
@@ -858,7 +872,7 @@ local function Silent_GetClosest()
 			return
 		end
 
-		local Part, Screen, IsVisible = GetTargetPart(Entry._thirdPersonObject._characterModelHash, AimbotPart, IsWallCheckOff)
+		local Part, Screen = GetTargetPart(Entry._thirdPersonObject._characterModelHash, AimbotPart, IsWallCheckOff)
 		if not Part or not Screen then
 			return
 		end
@@ -866,6 +880,14 @@ local function Silent_GetClosest()
 		local DeltaX, DeltaY = Screen.X - CenterX, Screen.Y - CenterY
 		local Distance = math.sqrt(DeltaX * DeltaX + DeltaY * DeltaY)
 		if Distance > FOVRadius then
+			return
+		end
+
+		if PreferredPlayer and Entry._player == PreferredPlayer then
+			MaxScore = -math.huge
+			BestPosition = Part.Position
+			BestEntry = Entry
+			BestPart = Part
 			return
 		end
 
@@ -884,52 +906,102 @@ local function Silent_GetClosest()
 	return BestPosition, BestEntry, BestPart
 end
 
-local function ns__hookfunction(Table, Index, Replacement, Info)
-    local Helper, Original, ReturnOriginal = Info and Info.Helper, Table[Index], Info and Info.ReturnOriginal
-    Table[Index] = Helper and (ReturnOriginal and function(...)
+local function ns__hookfunction(Table, Index, Replacement, Helper)
+    local Original = Table[Index]
+    Table[Index] = Helper and function(...)
 		return Replacement(Helper, Original, ...)
 	end or function(...)
-		return Replacement(Helper, ...)
-	end) or (ReturnOriginal and function(...)
 		return Replacement(Original, ...)
-	end or Replacement)
+	end
     return Original
+end
+
+local LocalHumanoid = nil
+for _,Child in next, IgnoreFolder:GetChildren() do
+	if Child:IsA("Model") and Child:FindFirstChildOfClass("Humanoid") then
+		IsSpawned = true
+		LocalHumanoid = Child:FindFirstChildOfClass("Humanoid")
+	end
+end
+
+local CorrectPositionSuccess = typeof(debug.getupvalue) == "function"
+if CorrectPositionSuccess then
+	local Success, NetworkEvents = pcall(debug.getupvalue, NetworkClient.fireReady, 5)
+	if Success and NetworkEvents then
+		ns__hookfunction(NetworkEvents, "correctposition", function(Original, ...)
+			if not Miscellaneous.Movement_Speed and not Miscellaneous.Movement_Fly and not Miscellaneous.Movement_BunnyHop then
+				return Original(...)
+			end
+		end)
+	else
+		CorrectPositionSuccess = false
+	end
 end
 
 ns__hookfunction(FirearmObject, "computeWalkSway", function(Original, self, ...)
 	return Miscellaneous.GunMods_NoWalkSway and Original(self, 0, 0) or Original(self, ...)
-end, {ReturnOriginal = true})
+end)
 
 ns__hookfunction(FirearmObject, "computeGunSway", function(Original, self, ...)
 	return Miscellaneous.GunMods_NoGunSway and CFrame.identity or Original(self, ...)
-end, {ReturnOriginal = true})
+end)
 
-ns__hookfunction(RecoilSprings, "applyImpulse", function(Original, ...)
-	if Miscellaneous.GunMods_NoRecoil or (IsAimbotLocking and Aiming.Aimbot_Type ~= "Silent") then
-		return
+ns__hookfunction(GetModule("RecoilSprings"), "applyImpulse", function(Original, ...)
+	if not Miscellaneous.GunMods_NoRecoil and (not IsAimbotLocking or Aiming.Aimbot_Type == "Silent") then
+		return Original(...)
 	end
-	return Original(...)
-end, {ReturnOriginal = true})
+end)
+
+ns__hookfunction(CharacterObject, "preSimulationStep", function(Original, self, DeltaTime)
+	Original(self, DeltaTime)
+
+	if Miscellaneous.Movement_Speed then
+		local Root = self._rootPart
+		local Horizontal = Vector3.new(Root.Velocity.X, 0, Root.Velocity.Z)
+		local Speed = Horizontal.Magnitude
+		if Speed > 0.5 then
+			Root.CFrame += Horizontal.Unit * (Miscellaneous.Movement_SpeedAmount - Speed) * DeltaTime
+		end
+	end
+
+	if Miscellaneous.Movement_Fly then
+		local CameraCFrame = Camera.CFrame
+		local Direction = CameraCFrame.LookVector * ((
+			UserInputService:IsKeyDown(Enum.KeyCode.W
+		) and 1 or 0) - (
+			UserInputService:IsKeyDown(Enum.KeyCode.S) and 1 or 0
+		)) + CameraCFrame.RightVector * ((UserInputService:IsKeyDown(Enum.KeyCode.D) and 1 or 0) - (
+			UserInputService:IsKeyDown(Enum.KeyCode.A) and 1 or 0
+		))
+
+		if Direction.Magnitude > 0 then
+			Direction = Direction.Unit * Miscellaneous.Movement_FlySpeed
+		end
+
+		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+			Direction += Vector3.new(0, Miscellaneous.Movement_FlySpeed, 0)
+		end
+
+		local Root = self._rootPart
+		Root.Velocity = Direction
+		Root.CFrame += Root.Velocity * DeltaTime
+	end
+end)
 
 ns__hookfunction(FirearmObject, "reload", function(Original, self, ...)
-	if IsRageBotInputActive or Miscellaneous.GunMods_InstantReload then
-		local SpareCount = self._spareCount
-		if SpareCount < 0 then
-			return Original(self)
-		end
-
-		local MagSizeData = self._weaponData.magsize
-		if SpareCount >= MagSizeData then
-			self._spareCount -= (MagSizeData - self._magCount)
-			self._magCount = MagSizeData
-		else
-			self._magCount = SpareCount
-			self._spareCount = 0
-		end
-		return NetworkClientSend(NetworkClient, "reload")
+	if self:isEquipping() or self:isUnequipping() or self:isChambering() then
+		return
 	end
+
+	if Miscellaneous.GunMods_InstantReload then
+		NetworkClientSend(NetworkClient, "reload")
+		self:applyReloadCount(self:getWeaponStat("magsize"))
+		self:fireInput("reloadFinish", GetGameClockTime())
+		return
+	end
+
 	return Original(self)
-end, {ReturnOriginal = true})
+end)
 
 local TicketCache = {}
 local GlobalTicketCounter = 0
@@ -938,7 +1010,9 @@ local TicketAddition = 0
 local LastSilent = {
 	Target = nil,
 	Velocity = nil,
-	Frame = 0
+	Frame = 0,
+	Player = nil,
+	Time = 0
 }
 
 local IsSpawned = false
@@ -947,35 +1021,60 @@ local FakeReplicationObject = nil
 local FakeThirdPersonObject = nil
 local IsAutoFiring = false
 
-local function ComputeAntiAimAngles(Angles)
+local AntiAimCycleFrames = 0
+
+local function GetAntiAimAngles(Angles)
 	local X, Y, Z = Angles.X, Angles.Y, Angles.Z
+	local ClockTime = os.clock()
+	AntiAimCycleFrames += 1
 
 	if Miscellaneous.Movement_AntiAimPitch then
-		local Addition = math.rad(Miscellaneous.Movement_AntiAimPitchAmount) - Quarter
-		X = Miscellaneous.Movement_AntiAimPitchMode == "Absolute" and Addition or math.clamp(X + Addition, NegativeQuarter, Quarter)
+		local Mode = Miscellaneous.Movement_AntiAimPitchMode
+		if Mode == "Custom - Relative" then
+			X = math.clamp(X + math.rad(Miscellaneous.Movement_AntiAimPitchAmount), -Quarter, Quarter)
+		elseif Mode == "Custom - Absolute" then
+			X = math.clamp(math.rad(Miscellaneous.Movement_AntiAimPitchAmount), -2, 2)
+		elseif Mode == "Rotate" then
+			X = math.sin(ClockTime * (Miscellaneous.Movement_AntiAimPitchSpeed * 0.5)) * 2
+		elseif Mode == "Random" then
+			X = math.random() * 4 - 2
+		end
 	end
 
 	if Miscellaneous.Movement_AntiAimYaw then
-		local Addition = math.rad(Miscellaneous.Movement_AntiAimYawAmount)
-		Y = Miscellaneous.Movement_AntiAimYawMode == "Relative" and (Y + Addition) or Addition
+		local Mode = Miscellaneous.Movement_AntiAimYawMode
+		if Mode == "Custom - Relative" then
+			Y += math.rad(Miscellaneous.Movement_AntiAimYawAmount)
+		elseif Mode == "Custom - Absolute" then
+			Y = math.rad(Miscellaneous.Movement_AntiAimYawAmount)
+		elseif Mode == "Backwards" then
+			Y += math.pi
+		elseif Mode == "Rotate" then
+			Y = (ClockTime * (Miscellaneous.Movement_AntiAimYawSpeed * 0.5)) % TwoPi
+		elseif Mode == "Random" then
+			Y = math.rad(math.random(-180, 180))
+		elseif Mode == "Cycle" then
+			local Speed = 76.5 - (Miscellaneous.Movement_AntiAimYawSpeed * 1.5)
+			Y = AntiAimCycleFrames % Speed >= (Speed * 0.5) and 2 or -2
+		end
 	end
 
-	if Miscellaneous.Movement_AntiAimSpinBot or Miscellaneous.Movement_AntiAimJitter then
-		local ClockTime = os.clock()
-
-		if Miscellaneous.Movement_AntiAimSpinBot then
-			Y += ((ClockTime * math.rad(Miscellaneous.Movement_AntiAimSpinSpeed)) % TwoPi) * (Miscellaneous.Movement_AntiAimSpinDirection == "Left" and 1 or -1)
-		end
-
-		if Miscellaneous.Movement_AntiAimJitter then
-			Y += (math.floor(ClockTime * Miscellaneous.Movement_AntiAimJitterSpeed) % 2 == 0) and math.pi or 0
-		end
+	if Miscellaneous.Movement_AntiAimJitter then
+		Y += (math.random() * 2 - 1) * math.rad(Miscellaneous.Movement_AntiAimJitterAmount) * 0.25
 	end
 
-	return Vector3.new(X, Y, Z)
+	if Miscellaneous.Movement_AntiAimSpinBot then
+		Y += ((ClockTime * math.rad(Miscellaneous.Movement_AntiAimSpinSpeed)) % TwoPi) * (Miscellaneous.Movement_AntiAimSpinDirection == "Left" and 1 or -1)
+	end
+
+	return Vector3.new(X, Y, Z) * 0.99
 end
 
-ns__hookfunction(NetworkClient, "send", function(self, Packet, ...)
+local repupdate_LastTime = nil
+local repupdate_ReverseTime = false
+
+local RaycastStep = 1/60
+NetworkClient.send = function(self, Packet, ...)
 	if Packet == "flaguser" or Packet == "debug" or Packet == "logmessage" then
 		return
 	elseif Packet == "spawn" then
@@ -1011,29 +1110,28 @@ ns__hookfunction(NetworkClient, "send", function(self, Packet, ...)
 		end
 
 		if IsAimbotInputActive and Aiming.Aimbot_Type == "Silent" then
-			if LastSilent.Target and (os.clock() - LastSilent.Frame < 0.1) then
+			local Now = os.clock()
+			if LastSilent.Target and (Now - LastSilent.Frame < 0.1) then
 				local Direction = LastSilent.Velocity.Unit
 				for _,Bullet in next, Bullets do
 					Bullet[1] = Direction
 				end
 				LastSilent.Target = nil
 				LastSilent.Velocity = nil
-			else
-				local Target, Entry = Silent_GetClosest()
+			elseif Aiming.Aimbot_SilentHitchance >= math.random(1, 100) then
+				local Preferred = LastSilent.Player and (Now - LastSilent.Time) < Aiming.Aimbot_SilentSwitchDelay and LastSilent.Player
+				local PartName = Aiming.Aimbot_Part
+				local Target, Entry = Silent_GetClosest(PartName, Preferred)
 				if Target and Entry then
 					local Player = Entry._player
-					if Target and MovementCache[Player] then
-						local Cache = MovementCache[Player]
-						local Current, Old, Velocity
-						if Cache then
-							Current = Cache[1]
-							Old = Cache[15]
-
-							if Current and Old then
-								local CurrentTime, OldTime = Old.Time, Current.Time
-								if (CurrentTime - OldTime) > 0.01 then
-									Velocity = (Current.Position - Old.Position) / (CurrentTime - OldTime)
-								end
+					local Cache = MovementCache[Player]
+					if Cache then
+						local Current, Old = Cache[1], Cache[15]
+						local Velocity
+						if Current and Old then
+							local CurrentTime, OldTime = Old.Time, Current.Time
+							if (CurrentTime - OldTime) > 0.01 then
+								Velocity = (Current.Position - Old.Position) / (CurrentTime - OldTime)
 							end
 						end
 
@@ -1041,11 +1139,14 @@ ns__hookfunction(NetworkClient, "send", function(self, Packet, ...)
 						local ProjectileSpeed = BulletData.velocity and (
 							Weapon and Weapon._weaponData.bulletspeed or BulletData.velocity.Magnitude
 						) or 0
-						local Trajectory = (GetTrajectory(BulletData.firepos, PublicSettings.bulletAcceleration, Target, ProjectileSpeed, Velocity or Vector3.zero)).Unit
+						local Trajectory = GetTrajectory(BulletData.firepos, PublicSettings.bulletAcceleration, Target, ProjectileSpeed, Velocity or Vector3.zero)
 						if Trajectory then
+							Trajectory = Trajectory.Unit
 							for _,Bullet in next, Bullets do
 								Bullet[1] = Trajectory
 							end
+							LastSilent.Player = Player
+							LastSilent.Time = Now
 						end
 					end
 				end
@@ -1053,7 +1154,7 @@ ns__hookfunction(NetworkClient, "send", function(self, Packet, ...)
 		end
 
 		if FakeThirdPersonObject then
-			FakeThirdPersonObject:kickWeapon(nil, nil, 0, 0)
+			FakeThirdPersonObject:kickWeapon(false, nil, 0, 0)
 		end
 
 		return NetworkClientSend(self, Packet, UniqueId, BulletData, Time)
@@ -1068,16 +1169,31 @@ ns__hookfunction(NetworkClient, "send", function(self, Packet, ...)
 		TicketCache[Ticket] = true
 		return NetworkClientSend(self, Packet, UniqueId, Player, Position, PartName, Ticket, Time)
 	elseif Packet == "repupdate" then
-		local Position, Angles,_,Time = ...
-		if Angles and Miscellaneous.Movement_AntiAimEnabled then
-			Angles = ComputeAntiAimAngles(Angles)
-			return NetworkClientSend(self, Packet, Position, Angles, Angles * 0.99, Time)
+		local Position, Angles, BarrelAngles, Time = ...
+		if Miscellaneous.Movement_Speed or Miscellaneous.Movement_Fly or Miscellaneous.Movement_BunnyHop then
+			if not repupdate_ReverseTime then
+				repupdate_LastTime = Time
+			end
+
+			if (Time - repupdate_LastTime) > RaycastStep then
+				repupdate_ReverseTime = false
+				repupdate_LastTime = Time
+			end
+
+			repupdate_ReverseTime = not repupdate_ReverseTime
+			Time = repupdate_LastTime
 		end
+
+		if Angles and Miscellaneous.Movement_AntiAimEnabled then
+			Angles = GetAntiAimAngles(Angles)
+		end
+
+		return NetworkClientSend(self, Packet, Position, Angles, BarrelAngles, Time)
 	elseif (Packet == "falldamage" and Miscellaneous.Movement_NoFallDamage) or (Packet == "changeCamo" and Miscellaneous.ClientSessionUnlocks_CamosUnlocked) or (Packet == "changeWeapon" and (...) == "Knife" and Miscellaneous.ClientSessionUnlocks_KnivesUnlocked) or (Packet == "changeAttachment" and Miscellaneous.ClientSessionUnlocks_AttachmentsUnlocked) then
 		return
 	end
 	return NetworkClientSend(self, Packet, ...)
-end)
+end
 
 ns__hookfunction(PlayerDataUtils, "getUnlocksData", function(Helper, Original, PlayerData)
 	local Unlocks = Original(PlayerData)
@@ -1096,11 +1212,11 @@ ns__hookfunction(PlayerDataUtils, "getUnlocksData", function(Helper, Original, P
 		})
 	end
 	return Unlocks
-end, {Helper = PlayerDataClientInterface.getPlayerData, ReturnOriginal = true})
+end, PlayerDataClientInterface.getPlayerData)
 
 ns__hookfunction(PlayerDataUtils, "ownsWeapon", function(Helper, Original, Player, WeaponName)
 	return (Miscellaneous.ClientSessionUnlocks_KnivesUnlocked and Helper(WeaponName).baseWeaponData.type == "KNIFE") and true or Original(Player, WeaponName)
-end, {Helper = ns__require("ContentInterface").getWeaponSource, ReturnOriginal = true})
+end, GetModule("ContentInterface").getWeaponSource)
 
 Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
 	ViewportSize = Camera.ViewportSize
@@ -1134,8 +1250,8 @@ local CustomSounds = {
 	["TF2 Frying Pan"] = "rbxassetid://18922477538"
 }
 
-local PlaySoundId
-PlaySoundId = ns__hookfunction(AudioSystem, "playSoundId", function(AssetId, Priority, Volume, ...)
+local PlaySoundId = AudioSystem.playSoundId
+AudioSystem.playSoundId = function(AssetId, Priority, Volume, ...)
 	local ShootSound = Miscellaneous.SoundOverride_ShootSound
 	if ShootSound == "None" then
 		return PlaySoundId(AssetId, Priority, Volume, ...)
@@ -1145,19 +1261,19 @@ PlaySoundId = ns__hookfunction(AudioSystem, "playSoundId", function(AssetId, Pri
 	if ActiveWeapon and AssetId == ActiveWeapon._weaponData.firesoundid then
 		return PlaySoundId(CustomSounds[ShootSound], Priority, Volume)
 	end
-end)
+end
 
-ns__hookfunction(AudioSystem, "playSound", function(Original, SoundName, ...)
+ns__hookfunction(AudioSystem, "playSound", function(Original, Name, ...)
 	local Arguments = table.pack(...)
-	if Miscellaneous.SoundOverride_HitSound ~= "None" and SoundName == "hitmarker" then
+	if Miscellaneous.SoundOverride_HitSound ~= "None" and Name == "hitmarker" then
 		return PlaySoundId(CustomSounds[Miscellaneous.SoundOverride_HitSound], 1, Arguments[3])
-	elseif Miscellaneous.SoundOverride_KillSound ~= "None" and (SoundName == "killshot" or SoundName == "headshotkill") then
+	elseif Miscellaneous.SoundOverride_KillSound ~= "None" and (Name == "killshot" or Name == "headshotkill") then
 		return PlaySoundId(CustomSounds[Miscellaneous.SoundOverride_KillSound], 1, Arguments[3])
-	elseif Miscellaneous.SoundOverride_GotHitSound ~= "None" and (SoundName == "crackSmall" or SoundName == "crackBig") then
+	elseif Miscellaneous.SoundOverride_GotHitSound ~= "None" and (Name == "crackSmall" or Name == "crackBig") then
 		return PlaySoundId(CustomSounds[Miscellaneous.SoundOverride_GotHitSound], 1, Arguments[3])
 	end
-	return Original(SoundName, ...)
-end, {ReturnOriginal = true})
+	return Original(Name, ...)
+end)
 
 local BeamCache = {}
 local function ReleaseBeam(Beam)
@@ -1225,17 +1341,19 @@ local function CreateBulletTracer(StartPosition, Direction)
 	})
 end
 
-ns__hookfunction(BulletObject, "new", function(Original, BulletData, ...)
+ns__hookfunction(GetModule("BulletObject"), "new", function(Original, BulletData, ...)
 	if not BulletData.onplayerhit then
 		return Original(BulletData)
 	end
 
-	if IsAimbotInputActive and Aiming.Aimbot_Type == "Silent" then
-		local Target, Entry, Part = Silent_GetClosest()
+	if IsAimbotInputActive and Aiming.Aimbot_Type == "Silent" and Aiming.Aimbot_SilentHitchance >= math.random(1, 100) then
+		local Now = os.clock()
+		local Preferred = LastSilent.Player and (Now - LastSilent.Time) < Aiming.Aimbot_SilentSwitchDelay and LastSilent.Player or nil
+		local PartName = Aiming.Aimbot_Part
+		local Target, Entry = Silent_GetClosest(PartName, Preferred)
 		if Target and Entry then
-			local Player = Entry._player
-			if Target and MovementCache[Player] then
-				local Cache = MovementCache[Player]
+			local Cache = MovementCache[Entry._player]
+			if Cache then
 				local Current, Old, Velocity
 				if Cache then
 					Current = Cache[1]
@@ -1250,7 +1368,9 @@ ns__hookfunction(BulletObject, "new", function(Original, BulletData, ...)
 					BulletData.velocity = Trajectory
 					LastSilent.Target = Target
 					LastSilent.Velocity = Trajectory
-					LastSilent.Frame = os.clock()
+					LastSilent.Frame = Now
+					LastSilent.Player = Entry._player
+					LastSilent.Time = Now
 				end
 			end
 		end
@@ -1264,7 +1384,7 @@ ns__hookfunction(BulletObject, "new", function(Original, BulletData, ...)
 		end
 	end
 	return Bullet
-end, {ReturnOriginal = true})
+end)
 
 local FlashlightPart = ns__cloneref(Instance.new("Part"))
 FlashlightPart.Anchored = true
@@ -1341,17 +1461,8 @@ Camera.ChildAdded:Connect(function(Child)
 	end
 end)
 
-local LocalHumanoid = nil
-for _,Child in next, IgnoreFolder:GetChildren() do
-	if Child:IsA("Model") and Child:FindFirstChildOfClass("Humanoid") then
-		IsSpawned = true
-		LocalHumanoid = Child:FindFirstChildOfClass("Humanoid")
-	end
-end
-
-ns__hookfunction(ScreenCull, "step", function(Original, ...)
+ns__hookfunction(GetModule("ScreenCull"), "step", function(Original, ...)
 	Original(...)
-
 	if IsThirdPersonActive then
 		local CameraOffset = Vector3.new(Visuals.Camera_ThirdPersonOffsetX, Visuals.Camera_ThirdPersonOffsetY, Visuals.Camera_ThirdPersonOffsetZ)
 		local DidCollide = false
@@ -1373,7 +1484,7 @@ ns__hookfunction(ScreenCull, "step", function(Original, ...)
 	if Visuals.Camera_FOVModificationEnabled then
 		Camera.FieldOfView = Visuals.Camera_FOVValue
 	end
-end, {ReturnOriginal = true})
+end)
 
 IgnoreFolder.ChildAdded:Connect(function(Child)
 	local Humanoid = Child:IsA("Model") and (Child:FindFirstChildOfClass("Humanoid") or Child:WaitForChild("Humanoid", 2))
@@ -1511,25 +1622,9 @@ end)
 
 local function VisibilityCheck(Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg)
 	local Layers = Settings.Advanced_MultiPointLayers
-
-	if CanSee(Head, Layers) or CanSee(Torso, Layers) then
+	if CanSee(Head, Layers) or CanSee(Torso, Layers) or CanSee(LeftArm, Layers) or CanSee(RightArm, Layers) or CanSee(LeftLeg, Layers) or CanSee(RightLeg, Layers) then
 		return true
 	end
-
-	if LeftArm and CanSee(LeftArm, Layers) then
-		return true
-	end
-	if RightArm and CanSee(RightArm, Layers) then
-		return true
-	end
-	if LeftLeg and CanSee(LeftLeg, Layers) then
-		return true
-	end
-	if RightLeg and CanSee(RightLeg, Layers) then
-		return true
-	end
-
-	return false
 end
 
 local function RotatePoint(Angle, Point, Center)
@@ -1553,199 +1648,18 @@ local function HandleLine(Line, FromPoint, ToPoint, Center, Angle, Color, Spin)
 	SetProperty(Line, "Visible", true)
 end
 
-local Rendering_DrawingObjects, Rendering_Highlights = {}, {} 
-local function UpdateESP(LocalHeadPosition, Player, Entry, Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg, GlobalOpacity)
-	local HighlightGroup = Rendering_Highlights[Player]
-	if not HighlightGroup then
-		HighlightGroup = {}
-		Rendering_Highlights[Player] = HighlightGroup
-	end
+local Rendering_DrawingObjects, Rendering_Highlights = {}, {}
+local FOVCircle = CreateDrawing("Circle", {Visible = false, Filled = false, Color = Aiming.Aimbot_FOVColor, Position = ScreenCenter, Thickness = 1})
+local TargetTracer = CreateDrawing("Line", {Visible = false, Color = Aiming.Aimbot_TargetTracerColor, Thickness = 1.5})
 
-	if Visuals.EnemyESP_Chams then
-		local ChamsColor
-		if Visuals.EnemyESP_ChamsStyle == "Visible" and VisibilityCheck(Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg) then
-			ChamsColor = Visuals.EnemyESP_ChamsVisibleColor
-		else
-			ChamsColor = Visuals.EnemyESP_ChamsColor
+local function UpdateProperty(Table, Property, Value)
+	for _,Group in next, Rendering_DrawingObjects do
+		for _,Name in next, Table do
+			Group[Name][Property] = Value
 		end
-
-		local ChamsRendering = Visuals.EnemyESP_ChamsRendering
-		local RenderFill, RenderOutline = ChamsRendering.Fill, ChamsRendering.Outline
-		if RenderFill or RenderOutline then
-			local Highlight = HighlightGroup.Full
-			if not Highlight then
-				Highlight = ns__cloneref(Instance.new("Highlight"))
-				Highlight.Parent = CoreGui
-				HighlightGroup.Full = Highlight
-			end
-
-			Highlight.DepthMode = Visuals.EnemyESP_ChamsOccluded and Enum.HighlightDepthMode.Occluded or Enum.HighlightDepthMode.AlwaysOnTop
-			Highlight.Adornee = Head.Parent
-			local Opacity = 1 - GlobalOpacity
-			Highlight.Enabled = true
-			Highlight.FillColor = ChamsColor
-			Highlight.OutlineColor = DarkerColorCache[ChamsColor]
-			Highlight.FillTransparency = RenderFill and Opacity or 1
-			Highlight.OutlineTransparency = RenderOutline and Opacity or 1
-		else
-			local Full = HighlightGroup.Full
-			if Full then
-				HighlightGroup.Full = nil
-				Full:Destroy()
-			end
-		end
-	else
-		local Full = HighlightGroup.Full
-		if Full then
-			HighlightGroup.Full = nil
-			Full:Destroy()
-		end
-	end
-
-	local DrawingGroup = Rendering_DrawingObjects[Player]
-	if not DrawingGroup then
-		DrawingGroup = {
-			Box = CreateDrawing("Square", {Filled = false, Color = Visuals.EnemyESP_BoxColor, Thickness = Visuals.EnemyESP_BoxThickness}),
-			HealthbarOutline = CreateDrawing("Square", {Filled = false, Color = Color3.fromRGB(255, 255, 255), Thickness = 1}),
-			HealthbarBackground = CreateDrawing("Square", {Filled = true, Color = Color3.fromRGB(8, 8, 8)}),
-			Healthbar = CreateDrawing("Square", {Filled = true, Color = Visuals.EnemyESP_HealthbarColor}),
-			Tag = CreateDrawing("Text", {Size = Visuals.EnemyESP_TagSize, Outline = true, Center = true, Color = Visuals.EnemyESP_TagColor}),
-			Dot = CreateDrawing("Circle", {Filled = true, Radius = Visuals.EnemyESP_DotSize, Color = Visuals.EnemyESP_DotColor}),
-			Tracer = CreateDrawing("Line", {Color = Visuals.EnemyESP_TracerColor, Thickness = Visuals.EnemyESP_TracerThickness}),
-		}
-		Rendering_DrawingObjects[Player] = DrawingGroup
-	end
-
-	local Box, Tag, Dot, Tracer = DrawingGroup.Box, DrawingGroup.Tag, DrawingGroup.Dot, DrawingGroup.Tracer
-	local HealthbarOutline, HealthbarBackground, Healthbar = DrawingGroup.HealthbarOutline, DrawingGroup.HealthbarBackground, DrawingGroup.Healthbar
-
-	local HeadPosition = Head.Position
-	local HeadScreen, HeadOnScreen = WorldToViewportPoint(HeadPosition)
-	if not HeadOnScreen then
-		SetProperty(Box, "Visible", false)
-		SetProperty(Tag, "Visible", false)
-		SetProperty(Dot, "Visible", false)
-		SetProperty(Tracer, "Visible", false)
-		SetProperty(HealthbarOutline, "Visible", false)
-		SetProperty(HealthbarBackground, "Visible", false)
-		SetProperty(Healthbar, "Visible", false)
-		return
-	end
-
-	local HeadScreenX = HeadScreen.X
-	local TorsoPosition = Torso.Position
-	local TopScreen, TopOnScreen = Camera:WorldToViewportPoint(HeadPosition + Vector3.new(0, Head.Size.Y * 0.5 + 1.2, 0))
-	local BottomScreen, BottomOnScreen = Camera:WorldToViewportPoint(TorsoPosition - Vector3.new(0, Torso.Size.Y * 0.5 + 3.0, 0))
-	local BottomScreenY = BottomScreen.Y
-
-	if TopOnScreen and BottomOnScreen then
-		local TopScreenY = TopScreen.Y
-		local BoxHeight = BottomScreenY - TopScreenY
-		local BoxWidth = BoxHeight * 0.65
-		local Health = Entry:getHealth()
-
-		if Visuals.EnemyESP_Boxes then
-			SetProperty(Box, "Visible", true)
-			SetProperty(Box, "Size", Vector2.new(BoxWidth, BoxHeight))
-			SetProperty(Box, "Position", Vector2.new(HeadScreenX - BoxWidth * 0.5, TopScreenY))
-			SetProperty(Box, "Transparency", GlobalOpacity)
-		else
-			SetProperty(Box, "Visible", false)
-		end
-
-		if Visuals.EnemyESP_HeadTags then
-			SetProperty(Tag, "Visible", true)
-			SetProperty(Tag, "Transparency", GlobalOpacity)
-			SetProperty(Tag, "Color", Visuals.EnemyESP_TagColor)
-			SetProperty(Tag, "Size", Visuals.EnemyESP_TagSize)
-
-			local Elements = Visuals.EnemyESP_HeadTagElements
-			local Text = ""
-			if Elements.Name then
-				Text = Player.Name
-			end
-
-			if Elements.Health then
-				Text ..= (Text ~= "" and (" [") or "[") .. tostring(math.floor(Health)) .. "]"
-			end
-
-			if Elements.Distance then
-				local Distance = math.floor((LocalHeadPosition - TorsoPosition).Magnitude)
-				Text ..= (Text ~= "" and (" [%dm]"):format(Distance) or ("[%dm]"):format(Distance))
-			end
-
-			if Elements.Visibility then
-				local Visibility = VisibilityCheck(Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg) and "[Visible]" or "[Hidden]"
-				Text ..= (Text ~= "" and (" " .. Visibility) or Visibility)
-			end
-
-			SetProperty(Tag, "Text", Text)
-			SetProperty(Tag, "Position", Vector2.new(HeadScreenX, TopScreenY - Tag.Size - 3))
-		else
-			SetProperty(Tag, "Visible", false)
-		end
-
-		if Visuals.EnemyESP_Healthbars then
-			local BarWidth = math.clamp(Visuals.EnemyESP_HealthbarWidth, 3, 8)
-			local BarHeight = math.max(24, BoxHeight * 0.9)
-			local BarX = HeadScreenX + BoxWidth * 0.5 + 5
-			local BarY = TopScreenY + (BoxHeight - BarHeight) * 0.5
-			local FillHeight = math.max(1, math.floor((BarHeight - 2) * math.clamp(Health * 0.01, 0, 1)))
-
-			SetProperty(HealthbarOutline, "Visible", true)
-			SetProperty(HealthbarOutline, "Size", Vector2.new(BarWidth, BarHeight))
-			SetProperty(HealthbarOutline, "Position", Vector2.new(BarX, BarY))
-			SetProperty(HealthbarOutline, "Transparency", GlobalOpacity)
-
-			SetProperty(HealthbarBackground, "Visible", true)
-			SetProperty(HealthbarBackground, "Size", Vector2.new(BarWidth - 2, BarHeight - 2))
-			SetProperty(HealthbarBackground, "Position", Vector2.new(BarX + 1, BarY + 1))
-			SetProperty(HealthbarBackground, "Transparency", GlobalOpacity)
-
-			SetProperty(Healthbar, "Visible", true)
-			SetProperty(Healthbar, "Size", Vector2.new(BarWidth - 2, FillHeight))
-			SetProperty(Healthbar, "Position", Vector2.new(BarX + 1, BarY + 1 + ((BarHeight - 2) - FillHeight)))
-			SetProperty(Healthbar, "Color", Visuals.EnemyESP_HealthbarColor)
-			SetProperty(Healthbar, "Transparency", GlobalOpacity)
-		else
-			SetProperty(HealthbarOutline, "Visible", false)
-			SetProperty(HealthbarBackground, "Visible", false)
-			SetProperty(Healthbar, "Visible", false)
-		end
-	else
-		SetProperty(Box, "Visible", false)
-		SetProperty(Tag, "Visible", false)
-		SetProperty(HealthbarOutline, "Visible", false)
-		SetProperty(HealthbarBackground, "Visible", false)
-		SetProperty(Healthbar, "Visible", false)
-	end
-
-	if Visuals.EnemyESP_Dots then
-		SetProperty(Dot, "Visible", true)
-		SetProperty(Dot, "Position", HeadScreen)
-		SetProperty(Dot, "Color", Visuals.EnemyESP_DotColor)
-		SetProperty(Dot, "Radius", Visuals.EnemyESP_DotSize)
-		SetProperty(Dot, "Transparency", GlobalOpacity)
-	else
-		SetProperty(Dot, "Visible", false)
-	end
-
-	if Visuals.EnemyESP_Tracers then
-		local Origin = Visuals.EnemyESP_TracerOrigin
-		if Origin == "Top" then
-			SetProperty(Tracer, "From", ScreenTop)
-		elseif Origin == "Center" then
-			SetProperty(Tracer, "From", ScreenCenter)
-		else
-			SetProperty(Tracer, "From", ScreenBottom)
-		end
-		SetProperty(Tracer, "To", Visuals.EnemyESP_TracerTarget == "Torso" and Vector2.new(HeadScreenX, (HeadScreen.Y + BottomScreenY) * 0.5) or HeadScreen)
-		SetProperty(Tracer, "Visible", true)
-		SetProperty(Tracer, "Transparency", GlobalOpacity)
-	else
-		SetProperty(Tracer, "Visible", false)
 	end
 end
+
 local function ClearESP(Player)
 	local DrawingGroup = Rendering_DrawingObjects[Player]
 	if DrawingGroup then
@@ -1797,23 +1711,25 @@ local World_Lighting = World_Tabbox:AddTab("Lighting")
 local World_ViewModel = World_Tabbox:AddTab("ViewModel")
 
 Aiming_Aimbot:AddToggle("Aimbot_Enabled", {Text = "Aimbot", Default = Aiming.Aimbot_Enabled, Callback = function(Value)
-	UpdateTable(Aiming, "Aimbot_Enabled", Value, function(Value)
-		IsAimbotInputActive = Value
+	UpdateTable(Aiming, "Aimbot_Enabled", Value, function(Value2)
+		IsAimbotInputActive = Value2
 	end)
-end}):AddKeyPicker("Aimbot_Keybind", {Default = Aiming.Aimbot_Keybind, Mode = "Toggle", Text = "Aiming Keybind", ChangedCallback = function(Keybind)
-	UpdateTable(Aiming, "Aimbot_Keybind", Keybind)
+end}):AddKeyPicker("Aimbot_Keybind", {Default = Aiming.Aimbot_Keybind, Mode = "Toggle", Text = "Aiming Keybind", SyncToggleState = true, ChangedCallback = function(Keybind)
+	Aiming.Aimbot_Keybind = Keybind
 end, Callback = function(Value)
-	IsAimbotInputActive = Value
+	if type(Value) == "boolean" then
+		Toggles.Aimbot_Enabled:SetValue(Value)
+	end
 end})
 
 local AimbotDependencyBox = Aiming_Aimbot:AddDependencyBox():SetupDependencies({{Toggles.Aimbot_Enabled, true}})
 
 AimbotDependencyBox:AddDropdown("Aimbot_Type", {Text = "Type", Default = Aiming.Aimbot_Type, Values = {"Camera", "Mouse", "Silent"}, Callback = function(Value)
-	UpdateTable(Aiming, "Aimbot_Type", Value)
+	Aiming.Aimbot_Type = Value
 end})
 
-AimbotDependencyBox:AddDropdown("Aimbot_Part", {Text = "Part", Default = Aiming.Aimbot_Part, Values = {"Head", "Torso", "Closest", "Priority"}, Callback = function(Value)
-	UpdateTable(Aiming, "Aimbot_Part", Value)
+AimbotDependencyBox:AddDependencyBox():SetupDependencies({{Options.Aimbot_Type, {"Camera", "Mouse"}}}):AddDropdown("Aimbot_Part", {Text = "Part", Default = Aiming.Aimbot_Part, Values = {"Head", "Torso", "Closest", "Priority"}, Callback = function(Value)
+	Aiming.Aimbot_Part = Value
 end})
 
 AimbotDependencyBox:AddDependencyBox():SetupDependencies({{Options.Aimbot_Part, "Priority"}}):AddPrioritySelector("Aimbot_PartPriorityOrder", {
@@ -1824,58 +1740,87 @@ AimbotDependencyBox:AddDependencyBox():SetupDependencies({{Options.Aimbot_Part, 
 
 AimbotDependencyBox:AddDependencyBox():SetupDependencies({{Options.Aimbot_Type, {"Camera", "Mouse"}}}):AddSlider("Aimbot_Smoothness", {
 	Text = "Smoothness", Default = Aiming.Aimbot_Smoothness, Min = 1, Max = 10, Rounding = 0, Callback = function(Value)
-		UpdateTable(Aiming, "Aimbot_Smoothness", Value)
+		Aiming.Aimbot_Smoothness = Value
 	end
 })
 
 if VirtualInputManager then
-	AimbotDependencyBox:AddDependencyBox():SetupDependencies({{Options.Aimbot_Type, "Silent"}}):AddToggle("Aimbot_AutoFire", {
+	local AutoFireDependencyBox = AimbotDependencyBox:AddDependencyBox():SetupDependencies({{Options.Aimbot_Type, "Silent"}})
+	AutoFireDependencyBox:AddToggle("Aimbot_AutoFire", {
 		Text = "AutoFire", Default = Aiming.Aimbot_AutoFire, Callback = function(Value)
-			UpdateTable(Aiming, "Aimbot_AutoFire", Value)
+			Aiming.Aimbot_AutoFire = Value
+		end
+	})
+	AutoFireDependencyBox:AddDependencyBox():SetupDependencies({{Toggles.Aimbot_AutoFire, true}}):AddToggle("Aimbot_AutoWall", {
+		Text = "Auto Wall", Default = Aiming.Aimbot_AutoWall, Callback = function(Value)
+			Aiming.Aimbot_AutoWall = Value
 		end
 	})
 end
 
+local SilentAimbotDependencyBox = AimbotDependencyBox:AddDependencyBox():SetupDependencies({{Options.Aimbot_Type, "Silent"}})
+
+SilentAimbotDependencyBox:AddDropdown("Aimbot_Part", {Text = "Part", Default = Aiming.Aimbot_Part, Values = {"Head", "Torso", "Closest", "Priority"}, Callback = function(Value)
+	Aiming.Aimbot_Part = Value
+end})
+
+SilentAimbotDependencyBox:AddSlider("Aimbot_SilentHitchance", {
+	Text = "Hitchance", Default = Aiming.Aimbot_SilentHitchance, Min = 0, Max = 100, Rounding = 0, Callback = function(Value)
+		Aiming.Aimbot_SilentHitchance = Value
+	end
+})
+
+SilentAimbotDependencyBox:AddSlider("Aimbot_SilentSwitchDelay", {
+	Text = "Switch Delay (ms)", Default = Aiming.Aimbot_SilentSwitchDelay, Min = 0, Max = 75, Rounding = 0, Callback = function(Value)
+		Aiming.Aimbot_SilentSwitchDelay = Value * 0.001
+	end
+})
+
 AimbotDependencyBox:AddToggle("Aimbot_WallCheck", {Text = "Wall Check", Default = Aiming.Aimbot_WallCheck, Callback = function(Value)
-	UpdateTable(Aiming, "Aimbot_WallCheck", Value)
+	Aiming.Aimbot_WallCheck = Value
 end})
 
 AimbotDependencyBox:AddToggle("Aimbot_DeathNotification", {Text = "Death Notification", Default = Aiming.Aimbot_DeathNotification, Callback = function(Value)
-	UpdateTable(Aiming, "Aimbot_DeathNotification", Value)
+	Aiming.Aimbot_DeathNotification = Value
 end})
 
 AimbotDependencyBox:AddToggle("Aimbot_ShowFOV", {Text = "FOV Circle", Default = Aiming.Aimbot_ShowFOV, Callback = function(Value)
-	UpdateTable(Aiming, "Aimbot_ShowFOV", Value)
+	Aiming.Aimbot_ShowFOV = Value
 end}):AddColorPicker("Aimbot_FOVColor", {Default = Aiming.Aimbot_FOVColor, Title = "FOV Color", Transparency = Aiming.Aimbot_FOVOpacity}).Callback = function(Value)
-	UpdateTable(Aiming, "Aimbot_FOVColor", Value)
-	UpdateTable(Aiming, "Aimbot_FOVOpacity", 1 - Options.Aimbot_FOVColor.Transparency)
+	Aiming.Aimbot_FOVColor = Value
+	Aiming.Aimbot_FOVOpacity = 1 - Options.Aimbot_FOVColor.Transparency
+	FOVCircle.Color = Value
+	FOVCircle.Transparency = Aiming.Aimbot_FOVOpacity
 end
 
 AimbotDependencyBox:AddDependencyBox():SetupDependencies({{Toggles.Aimbot_ShowFOV, true}}):AddSlider("Aimbot_FOVRadius", {
 	Text = "FOV Radius", Default = Aiming.Aimbot_FOVRadius, Min = 10, Max = 800, Rounding = 0, Callback = function(Value)
-		UpdateTable(Aiming, "Aimbot_FOVRadius", Value)
+		Aiming.Aimbot_FOVRadius = Value
 	end
 })
 
 AimbotDependencyBox:AddToggle("Aimbot_TargetTracer", {Text = "Target Tracer", Default = Aiming.Aimbot_TargetTracer, Callback = function(Value)
-	UpdateTable(Aiming, "Aimbot_TargetTracer", Value)
+	Aiming.Aimbot_TargetTracer = Value
 end}):AddColorPicker("Aimbot_TargetTracerColor", {Default = Aiming.Aimbot_TargetTracerColor, Title = "Tracer Color", Callback = function(Value)
-	UpdateTable(Aiming, "Aimbot_TargetTracerColor", Value)
+	Aiming.Aimbot_TargetTracerColor = Value
+	TargetTracer.Color = Value
 end})
 
 Aiming_RageBot:AddToggle("RageBot_Enabled", {Text = "RageBot", Default = Aiming.RageBot_Enabled, Callback = function(Value)
-	UpdateTable(Aiming, "RageBot_Enabled", Value, function(Value)
-		IsRageBotInputActive = Value
+	UpdateTable(Aiming, "RageBot_Enabled", Value, function(Value2)
+		IsRageBotInputActive = Value2
 	end)
-end}):AddKeyPicker("RageBot_Keybind", {Default = Aiming.RageBot_Keybind, Mode = "Toggle", Text = "RageBot Keybind", ChangedCallback = function(Keybind)
-	UpdateTable(Aiming, "RageBot_Keybind", Keybind)
+end}):AddKeyPicker("RageBot_Keybind", {Default = Aiming.RageBot_Keybind, Mode = "Toggle", Text = "RageBot Keybind", SyncToggleState = true, ChangedCallback = function(Keybind)
+	Aiming.RageBot_Keybind = Keybind
 end, Callback = function(Value)
-	IsRageBotInputActive = Value
+	if type(Value) == "boolean" then
+		Toggles.RageBot_Enabled:SetValue(Value)
+	end
 end})
 
 local RageBotDependencyBox = Aiming_RageBot:AddDependencyBox():SetupDependencies({{Toggles.RageBot_Enabled, true}})
 RageBotDependencyBox:AddDropdown("RageBot_Part", {Text = "Part", Default = Aiming.RageBot_Part, Values = {"Head", "Torso", "Closest", "Priority"}, Callback = function(Value)
-	UpdateTable(Aiming, "RageBot_Part", Value)
+	Aiming.RageBot_Part = Value
 end})
 
 RageBotDependencyBox:AddDependencyBox():SetupDependencies({{Options.RageBot_Part, "Priority"}}):AddPrioritySelector("RageBot_HitboxPriorityOrder", {
@@ -1885,136 +1830,170 @@ RageBotDependencyBox:AddDependencyBox():SetupDependencies({{Options.RageBot_Part
 })
 
 RageBotDependencyBox:AddToggle("RageBot_WallPenetrationDetection", {Text = "Wall Penetration Detection", Default = Aiming.RageBot_WallPenetrationDetection, Callback = function(Value)
-	UpdateTable(Aiming, "RageBot_WallPenetrationDetection", Value)
+	Aiming.RageBot_WallPenetrationDetection = Value
 end})
 
 RageBotDependencyBox:AddToggle("RageBot_IgnoreBulletTracers", {Text = "Ignore Bullet Tracers", Default = Aiming.RageBot_IgnoreBulletTracers, Callback = function(Value)
-	UpdateTable(Aiming, "RageBot_IgnoreBulletTracers", Value)
+	Aiming.RageBot_IgnoreBulletTracers = Value
 end})
 
 local Miscellaneous_GunMods = Tabs.Miscellaneous:AddLeftGroupbox("Gun Mods")
 
 Miscellaneous_GunMods:AddToggle("GunMods_NoWalkSway", {Text = "No Walk Sway", Default = Miscellaneous.GunMods_NoWalkSway, Callback = function(Value)
-	UpdateTable(Miscellaneous, "GunMods_NoWalkSway", Value)
+	Miscellaneous.GunMods_NoWalkSway = Value
 end})
 
 Miscellaneous_GunMods:AddToggle("GunMods_NoGunSway", {Text = "No Gun Sway", Default = Miscellaneous.GunMods_NoGunSway, Callback = function(Value)
-	UpdateTable(Miscellaneous, "GunMods_NoGunSway", Value)
+	Miscellaneous.GunMods_NoGunSway = Value
 end})
 
 Miscellaneous_GunMods:AddToggle("GunMods_NoRecoil", {Text = "No Recoil", Default = Miscellaneous.GunMods_NoRecoil, Callback = function(Value)
-	UpdateTable(Miscellaneous, "GunMods_NoRecoil", Value)
+	Miscellaneous.GunMods_NoRecoil = Value
 end})
 
 Miscellaneous_GunMods:AddToggle("GunMods_InstantReload", {Text = "Instant Reload", Default = Miscellaneous.GunMods_InstantReload, Callback = function(Value)
-	UpdateTable(Miscellaneous, "GunMods_InstantReload", Value)
+	Miscellaneous.GunMods_InstantReload = Value
 end})
 
 local HitLogs_GroupBox = Tabs.Miscellaneous:AddLeftGroupbox("Hit Logs")
 HitLogs_GroupBox:AddToggle("HitLogs_Enabled", {Text = "Hit Logs", Default = Miscellaneous.HitLogs_Enabled, Callback = function(Value)
-	UpdateTable(Miscellaneous, "HitLogs_Enabled", Value)
+	Miscellaneous.HitLogs_Enabled = Value
 end})
 
 local HitLogs_DependencyBox = HitLogs_GroupBox:AddDependencyBox():SetupDependencies({{Toggles.HitLogs_Enabled, true}})
 HitLogs_DependencyBox:AddToggle("HitLogs_ShowDamage", {Text = "Show Damage", Default = Miscellaneous.HitLogs_ShowDamage, Callback = function(Value)
-	UpdateTable(Miscellaneous, "HitLogs_ShowDamage", Value)
+	Miscellaneous.HitLogs_ShowDamage = Value
 end})
 HitLogs_DependencyBox:AddToggle("HitLogs_ShowDistance", {Text = "Show Distance", Default = Miscellaneous.HitLogs_ShowDistance, Callback = function(Value)
-	UpdateTable(Miscellaneous, "HitLogs_ShowDistance", Value)
+	Miscellaneous.HitLogs_ShowDistance = Value
 end})
 
 local SoundOverride_Groupbox = Tabs.Miscellaneous:AddLeftGroupbox("Sound Override")
 SoundOverride_Groupbox:AddDropdown("SoundOverride_ShootSound", {Text = "Shoot", Default = Miscellaneous.SoundOverride_ShootSound, Values = SoundOptions, Callback = function(Value)
-	UpdateTable(Miscellaneous, "SoundOverride_ShootSound", Value)
+	Miscellaneous.SoundOverride_ShootSound = Value
 end})
 SoundOverride_Groupbox:AddDropdown("SoundOverride_HitSound", {Text = "Hit", Default = Miscellaneous.SoundOverride_HitSound, Values = SoundOptions, Callback = function(Value)
-	UpdateTable(Miscellaneous, "SoundOverride_HitSound", Value)
+	Miscellaneous.SoundOverride_HitSound = Value
 end})
 SoundOverride_Groupbox:AddDropdown("SoundOverride_KillSound", {Text = "Kill", Default = Miscellaneous.SoundOverride_KillSound, Values = SoundOptions, Callback = function(Value)
-	UpdateTable(Miscellaneous, "SoundOverride_KillSound", Value)
+	Miscellaneous.SoundOverride_KillSound = Value
 end})
 SoundOverride_Groupbox:AddDropdown("SoundOverride_GotHitSound", {Text = "Hurt", Default = Miscellaneous.SoundOverride_GotHitSound, Values = SoundOptions, Callback = function(Value)
-	UpdateTable(Miscellaneous, "SoundOverride_GotHitSound", Value)
+	Miscellaneous.SoundOverride_GotHitSound = Value
 end})
 
 local RagdollsEffects_Groupbox = Tabs.Miscellaneous:AddLeftGroupbox("Ragdoll Effects")
 RagdollsEffects_Groupbox:AddDropdown("RagdollEffects_Mode", {Text = "Ragdoll Mode", Default = Miscellaneous.RagdollEffects_Mode, Values = {"None", "Launch", "Fling", "Float"}, Callback = function(Value)
-	UpdateTable(Miscellaneous, "RagdollEffects_Mode", Value)
+	Miscellaneous.RagdollEffects_Mode = Value
 end})
 RagdollsEffects_Groupbox:AddDependencyBox():SetupDependencies({{Options.RagdollEffects_Mode, "Launch"}}):AddSlider("RagdollEffects_LaunchForce", {Text = "Launch Force", Default = Miscellaneous.RagdollEffects_LaunchForce, Min = 50, Max = 500, Rounding = 0, Callback = function(Value)
-	UpdateTable(Miscellaneous, "RagdollEffects_LaunchForce", Value)
+	Miscellaneous.RagdollEffects_LaunchForce = Value
 end})
 RagdollsEffects_Groupbox:AddDependencyBox():SetupDependencies({{Options.RagdollEffects_Mode, "Fling"}}):AddSlider("RagdollEffects_FlingForce", {Text = "Fling Force", Default = Miscellaneous.RagdollEffects_FlingForce, Min = 100, Max = 500, Rounding = 0, Callback = function(Value)
-	UpdateTable(Miscellaneous, "RagdollEffects_FlingForce", Value)
+	Miscellaneous.RagdollEffects_FlingForce = Value
 end})
 RagdollsEffects_Groupbox:AddDependencyBox():SetupDependencies({{Options.RagdollEffects_Mode, "Float"}}):AddSlider("RagdollEffects_FloatSpeed", {Text = "Float Speed", Default = Miscellaneous.RagdollEffects_FloatSpeed, Min = 1, Max = 100, Rounding = 0, Callback = function(Value)
-	UpdateTable(Miscellaneous, "RagdollEffects_FloatSpeed", Value)
+	Miscellaneous.RagdollEffects_FloatSpeed = Value
 end})
 
 local Miscellaneous_Movement = Tabs.Miscellaneous:AddRightGroupbox("Movement")
 Miscellaneous_Movement:AddToggle("Movement_NoFallDamage", {Text = "No Fall Damage", Default = Miscellaneous.Movement_NoFallDamage, Callback = function(Value)
-	UpdateTable(Miscellaneous, "Movement_NoFallDamage", Value)
+	Miscellaneous.Movement_NoFallDamage = Value
 end})
 Miscellaneous_Movement:AddToggle("Movement_BunnyHop", {Text = "Bunny Hop [May Despawn]", Default = Miscellaneous.Movement_BunnyHop, Callback = function(Value)
-	UpdateTable(Miscellaneous, "Movement_BunnyHop", Value)
+	Miscellaneous.Movement_BunnyHop = Value
+end})
+Miscellaneous_Movement:AddToggle("Movement_Speed", {Text = "Speed", Default = Miscellaneous.Movement_Speed, Callback = function(Value)
+	Miscellaneous.Movement_Speed = Value
+end})
+local SpeedHackDependencyBox = Miscellaneous_Movement:AddDependencyBox():SetupDependencies({{Toggles.Movement_Speed, true}})
+SpeedHackDependencyBox:AddSlider("Movement_SpeedAmount", {Text = "Amount", Default = Miscellaneous.Movement_SpeedAmount, Min = 0, Max = 250, Rounding = 0, Callback = function(Value)
+	Miscellaneous.Movement_SpeedAmount = Value
+end})
+Miscellaneous_Movement:AddToggle("Movement_Fly", {Text = "Fly [May Despawn]", Default = Miscellaneous.Movement_Fly, Callback = function(Value)
+	Miscellaneous.Movement_Fly = Value
+end})
+local FlyDependencyBox = Miscellaneous_Movement:AddDependencyBox():SetupDependencies({{Toggles.Movement_Fly, true}})
+FlyDependencyBox:AddSlider("Movement_FlySpeed", {Text = "Speed", Default = Miscellaneous.Movement_FlySpeed, Min = 0, Max = 50, Rounding = 0, Callback = function(Value)
+	Miscellaneous.Movement_FlySpeed = Value
 end})
 Miscellaneous_Movement:AddToggle("Movement_AntiAimEnabled", {Text = "Anti Aim", Default = Miscellaneous.Movement_AntiAimEnabled, Callback = function(Value)
-	UpdateTable(Miscellaneous, "Movement_AntiAimEnabled", Value)
+	Miscellaneous.Movement_AntiAimEnabled = Value
+end}):AddKeyPicker("Movement_AntiAimEnabled_Keybind", {Default = Miscellaneous.Movement_AntiAimEnabled_Keybind, Mode = "Toggle", Text = "Anti Aim Keybind", SyncToggleState = true, ChangedCallback = function(Keybind)
+	Miscellaneous.Movement_AntiAimEnabled_Keybind = Keybind
+end, Callback = function(Value)
+	if type(Value) == "boolean" then
+		Toggles.Movement_AntiAimEnabled:SetValue(Value)
+	end
 end})
 
 local AntiAimDependencyBox = Miscellaneous_Movement:AddDependencyBox():SetupDependencies({{Toggles.Movement_AntiAimEnabled, true}})
 AntiAimDependencyBox:AddToggle("Movement_AntiAimYaw", {Text = "Yaw", Default = Miscellaneous.Movement_AntiAimYaw, Callback = function(Value)
-	UpdateTable(Miscellaneous, "Movement_AntiAimYaw", Value)
+	Miscellaneous.Movement_AntiAimYaw = Value
 end})
 
 local YawDependencyBox = AntiAimDependencyBox:AddDependencyBox():SetupDependencies({{Toggles.Movement_AntiAimYaw, true}})
-YawDependencyBox:AddSlider("Movement_AntiAimYawAmount", {Text = "Yaw Amount", Default = Miscellaneous.Movement_AntiAimYawAmount, Min = 0, Max = 360, Rounding = 0, Callback = function(Value)
-	UpdateTable(Miscellaneous, "Movement_AntiAimYawAmount", Value)
+YawDependencyBox:AddDropdown("Movement_AntiAimYawMode", {Text = "Yaw Mode", Default = Miscellaneous.Movement_AntiAimYawMode, Values = {"Custom - Relative", "Custom - Absolute", "Backwards", "Rotate", "Random", "Cycle"}, Callback = function(Value)
+	Miscellaneous.Movement_AntiAimYawMode = Value
 end})
-YawDependencyBox:AddDropdown("Movement_AntiAimYawMode", {Text = "Yaw Mode", Default = Miscellaneous.Movement_AntiAimYawMode, Values = {"Relative", "Absolute"}, Callback = function(Value)
-	UpdateTable(Miscellaneous, "Movement_AntiAimYawMode", Value)
-end})
+YawDependencyBox:AddDependencyBox():SetupDependencies({{Options.Movement_AntiAimYawMode, {"Custom - Relative", "Custom - Absolute"}}}):AddSlider("Movement_AntiAimYawAmount", {
+	Text = "Yaw Amount", Default = Miscellaneous.Movement_AntiAimYawAmount, Min = 0, Max = 360, Rounding = 0, Callback = function(Value)
+		Miscellaneous.Movement_AntiAimYawAmount = Value
+	end
+})
+YawDependencyBox:AddDependencyBox():SetupDependencies({{Options.Movement_AntiAimYawMode, {"Rotate", "Cycle"}}}):AddSlider("Movement_AntiAimYawSpeed", {
+	Text = "Yaw Speed", Default = Miscellaneous.Movement_AntiAimYawSpeed, Min = 0, Max = 50, Rounding = 0, Callback = function(Value)
+		Miscellaneous.Movement_AntiAimYawSpeed = Value
+	end
+})
 AntiAimDependencyBox:AddToggle("Movement_AntiAimPitch", {Text = "Pitch", Default = Miscellaneous.Movement_AntiAimPitch, Callback = function(Value)
-	UpdateTable(Miscellaneous, "Movement_AntiAimPitch", Value)
+	Miscellaneous.Movement_AntiAimPitch = Value
 end})
 
 local PitchDependencyBox = AntiAimDependencyBox:AddDependencyBox():SetupDependencies({{Toggles.Movement_AntiAimPitch, true}})
-PitchDependencyBox:AddSlider("Movement_AntiAimPitchAmount", {Text = "Pitch Amount", Default = Miscellaneous.Movement_AntiAimPitchAmount, Min = 0, Max = 180, Rounding = 0, Callback = function(Value)
-	UpdateTable(Miscellaneous, "Movement_AntiAimPitchAmount", Value)
+PitchDependencyBox:AddDropdown("Movement_AntiAimPitchMode", {Text = "Pitch Mode", Default = Miscellaneous.Movement_AntiAimPitchMode, Values = {"Custom - Relative", "Custom - Absolute", "Rotate", "Random"}, Callback = function(Value)
+	Miscellaneous.Movement_AntiAimPitchMode = Value
 end})
-PitchDependencyBox:AddDropdown("Movement_AntiAimPitchMode", {Text = "Pitch Mode", Default = Miscellaneous.Movement_AntiAimPitchMode, Values = {"Relative", "Absolute"}, Callback = function(Value)
-	UpdateTable(Miscellaneous, "Movement_AntiAimPitchMode", Value)
-end})
+PitchDependencyBox:AddDependencyBox():SetupDependencies({{Options.Movement_AntiAimPitchMode, {"Custom - Relative", "Custom - Absolute"}}}):AddSlider("Movement_AntiAimPitchAmount", {
+	Text = "Pitch Amount", Default = Miscellaneous.Movement_AntiAimPitchAmount, Min = 0, Max = 180, Rounding = 0, Callback = function(Value)
+		Miscellaneous.Movement_AntiAimPitchAmount = Value
+	end
+})
+PitchDependencyBox:AddDependencyBox():SetupDependencies({{Options.Movement_AntiAimPitchMode, "Rotate"}}):AddSlider("Movement_AntiAimPitchSpeed", {
+	Text = "Pitch Speed", Default = Miscellaneous.Movement_AntiAimPitchSpeed, Min = 0, Max = 50, Rounding = 0, Callback = function(Value)
+		Miscellaneous.Movement_AntiAimPitchSpeed = Value
+	end
+})
 AntiAimDependencyBox:AddToggle("Movement_AntiAimJitter", {Text = "Jitter", Default = Miscellaneous.Movement_AntiAimJitter, Callback = function(Value)
-	UpdateTable(Miscellaneous, "Movement_AntiAimJitter", Value)
+	Miscellaneous.Movement_AntiAimJitter = Value
 end})
-AntiAimDependencyBox:AddDependencyBox():SetupDependencies({{Toggles.Movement_AntiAimJitter, true}}):AddSlider("Movement_AntiAimJitterSpeed", {
-	Text = "Jitter Speed", Default = Miscellaneous.Movement_AntiAimJitterSpeed, Min = 1, Max = 1000, Rounding = 0, Callback = function(Value)
-		UpdateTable(Miscellaneous, "Movement_AntiAimJitterSpeed", Value)
+AntiAimDependencyBox:AddDependencyBox():SetupDependencies({{Toggles.Movement_AntiAimJitter, true}}):AddSlider("Movement_AntiAimJitterAmount", {
+	Text = "Jitter Amount", Default = Miscellaneous.Movement_AntiAimJitterAmount, Min = 0, Max = 360, Rounding = 0, Callback = function(Value)
+		Miscellaneous.Movement_AntiAimJitterAmount = Value
 	end
 })
 AntiAimDependencyBox:AddToggle("Movement_AntiAimSpinBot", {Text = "Spin Bot", Default = Miscellaneous.Movement_AntiAimSpinBot, Callback = function(Value)
-	UpdateTable(Miscellaneous, "Movement_AntiAimSpinBot", Value)
+	Miscellaneous.Movement_AntiAimSpinBot = Value
 end})
 
 local SpinBotDependencyBox = AntiAimDependencyBox:AddDependencyBox():SetupDependencies({{Toggles.Movement_AntiAimSpinBot, true}})
 SpinBotDependencyBox:AddDropdown("Movement_AntiAimSpinDirection", {Text = "Spin Direction", Default = Miscellaneous.Movement_AntiAimSpinDirection, Values = {"Left", "Right"}, Callback = function(Value)
-	UpdateTable(Miscellaneous, "Movement_AntiAimSpinDirection", Value)
+	Miscellaneous.Movement_AntiAimSpinDirection = Value
 end})
 SpinBotDependencyBox:AddSlider("Movement_AntiAimSpinSpeed", {Text = "Spin Speed", Default = Miscellaneous.Movement_AntiAimSpinSpeed, Min = 1, Max = 1000, Rounding = 0, Callback = function(Value)
-	UpdateTable(Miscellaneous, "Movement_AntiAimSpinSpeed", Value)
+	Miscellaneous.Movement_AntiAimSpinSpeed = Value
 end})
 
 Visuals_CombatGroupbox:AddToggle("Combat_LightningKillEffectEnabled", {Text = "Lightning Kill Effect", Default = Visuals.Combat_LightningKillEffectEnabled, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_LightningKillEffectEnabled", Value)
+	Visuals.Combat_LightningKillEffectEnabled = Value
 end}):AddColorPicker("Combat_LightningKillEffectColor", {Default = Visuals.Combat_LightningKillEffectColor, Title = "Lightning Color", Callback = function(Value)
-	UpdateTable(Visuals, "Combat_LightningKillEffectColor", Value)
+	Visuals.Combat_LightningKillEffectColor = Value
 end})
 
 Visuals_CombatGroupbox:AddToggle("Combat_BulletTracers", {Text = "Bullet Tracers", Default = Visuals.Combat_BulletTracers, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_BulletTracers", Value)
+	Visuals.Combat_BulletTracers = Value
 end}):AddColorPicker("Combat_BulletTracerColor", {Default = Visuals.Combat_BulletTracerColor, Title = "Tracer Color", Callback = function(Value)
-	UpdateTable(Visuals, "Combat_BulletTracerColor", Value)
+	Visuals.Combat_BulletTracerColor = Value
 end})
 
 local Miscellaneous_ClientSessionUnlocks = Tabs.Miscellaneous:AddRightGroupbox("Client Session Unlocks")
@@ -2047,179 +2026,207 @@ Miscellaneous_ClientSessionUnlocks:AddButton({Text = "Unlock Camos", Func = func
         break
     end
 end})
-Miscellaneous_ClientSessionUnlocks:AddLabel("Information [MUST READ | HOVER]", false, "1. These Unlocks only last for the current session.\n2. Unlocks are only visible to you, not others.\n3. Dropping Unlocked weapons makes it lose any Unlocked Add-Ons meaning you'd need to respawn to have the Add-Ons again.\n4. Dropping an Unlocked Knife in a match will make it dissapear.\n5. As of 7/7/2026, these Unlocks are undetected, use at your own risk.")
+Miscellaneous_ClientSessionUnlocks:AddLabel("Information [MUST READ | HOVER]", false, "1. These Unlocks only last for the current session.\n2. Unlocks are only visible to you, not others.\n3. Dropping Unlocked weapons makes it lose any Unlocked Add-Ons meaning you'd need to respawn to have the Add-Ons again.\n4. Dropping an Unlocked Knife in a match will make it dissapear.\n5. As of 8/16/2026, these Unlocks are undetected, use at your own risk.")
 
 local BulletTracersDependencyBox = Visuals_CombatGroupbox:AddDependencyBox():SetupDependencies({{Toggles.Combat_BulletTracers, true}})
 BulletTracersDependencyBox:AddDropdown("Combat_BulletTracerType", {Text = "Tracer Type", Default = Visuals.Combat_BulletTracerType, Values = {"Beam", "Wavy"}, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_BulletTracerType", Value)
+	Visuals.Combat_BulletTracerType = Value
 end})
 BulletTracersDependencyBox:AddDropdown("Combat_BulletTracerFadeMode", {Text = "Fade Mode", Default = Visuals.Combat_BulletTracerFadeMode, Values = {"Width", "Transparency"}, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_BulletTracerFadeMode", Value)
+	Visuals.Combat_BulletTracerFadeMode = Value
 end})
 BulletTracersDependencyBox:AddSlider("Combat_BulletTracerThickness", {Text = "Thickness", Default = Visuals.Combat_BulletTracerThickness, Min = 1, Max = 5, Rounding = 1, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_BulletTracerThickness", Value)
+	Visuals.Combat_BulletTracerThickness = Value
 end})
 BulletTracersDependencyBox:AddSlider("Combat_BulletTracerDuration", {Text = "Duration", Default = Visuals.Combat_BulletTracerDuration, Min = 0.1, Max = 10, Rounding = 1, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_BulletTracerDuration", Value)
+	Visuals.Combat_BulletTracerDuration = Value
 end})
 
 Visuals_CombatGroupbox:AddToggle("Combat_HitMarkerEnabled", {Text = "Hit Markers", Default = Visuals.Combat_HitMarkerEnabled, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_HitMarkerEnabled", Value)
+	Visuals.Combat_HitMarkerEnabled = Value
 end}):AddColorPicker("Combat_HitMarkerColor", {Default = Visuals.Combat_HitMarkerColor, Title = "Hit Markers Color", Callback = function(Value)
-	UpdateTable(Visuals, "Combat_HitMarkerColor", Value)
+	Visuals.Combat_HitMarkerColor = Value
 end})
 
 local HitMarkerDependencyBox = Visuals_CombatGroupbox:AddDependencyBox():SetupDependencies({{Toggles.Combat_HitMarkerEnabled, true}})
 
 HitMarkerDependencyBox:AddDropdown("Combat_HitMarkerStyle", {Text = "Marker Style", Default = Visuals.Combat_HitMarkerStyle, Values = {"X", "Plus"}, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_HitMarkerStyle", Value)
+	Visuals.Combat_HitMarkerStyle = Value
 end})
 
 HitMarkerDependencyBox:AddSlider("Combat_HitMarkerSize", {Text = "Marker Size", Default = Visuals.Combat_HitMarkerSize, Min = 4, Max = 30, Rounding = 0, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_HitMarkerSize", Value)
+	Visuals.Combat_HitMarkerSize = Value
 end})
 
 HitMarkerDependencyBox:AddSlider("Combat_HitMarkerGap", {Text = "Marker Gap", Default = Visuals.Combat_HitMarkerGap, Min = 0, Max = 15, Rounding = 0, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_HitMarkerGap", Value)
+	Visuals.Combat_HitMarkerGap = Value
 end})
 
 HitMarkerDependencyBox:AddSlider("Combat_HitMarkerDuration", {Text = "Marker Duration", Default = Visuals.Combat_HitMarkerDuration, Min = 0.1, Max = 5, Rounding = 1, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_HitMarkerDuration", Value)
+	Visuals.Combat_HitMarkerDuration = Value
 end})
 
 HitMarkerDependencyBox:AddToggle("Combat_HitMarkerSpin", {Text = "Spinning Marker", Default = Visuals.Combat_HitMarkerSpin, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_HitMarkerSpin", Value)
+	Visuals.Combat_HitMarkerSpin = Value
 end})
 
 HitMarkerDependencyBox:AddDependencyBox():SetupDependencies({{Toggles.Combat_HitMarkerSpin, true}}):AddSlider("Combat_HitMarkerSpinSpeed", {
 	Text = "Spin Speed", Default = Visuals.Combat_HitMarkerSpinSpeed, Min = 1, Max = 10, Rounding = 0, Callback = function(Value)
-		UpdateTable(Visuals, "Combat_HitMarkerSpinSpeed", Value)
+		Visuals.Combat_HitMarkerSpinSpeed = Value
 	end
 })
 
 Visuals_CombatGroupbox:AddToggle("Combat_GrenadeTrajectory", {Text = "Grenade Trajectory [BETA]", Default = Visuals.Combat_GrenadeTrajectory, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_GrenadeTrajectory", Value)
+	Visuals.Combat_GrenadeTrajectory = Value
 end}):AddColorPicker("Combat_GrenadeTrajectoryColor", {Default = Visuals.Combat_GrenadeTrajectoryColor, Title = "Trajectory Color", Callback = function(Value)
-	UpdateTable(Visuals, "Combat_GrenadeTrajectoryColor", Value)
+	Visuals.Combat_GrenadeTrajectoryColor = Value
 end})
 
 local GrenadeTrajectory_DepedencyBox = Visuals_CombatGroupbox:AddDependencyBox():SetupDependencies({{Toggles.Combat_GrenadeTrajectory, true}})
 
 GrenadeTrajectory_DepedencyBox:AddLabel("Impact Color"):AddColorPicker("Combat_GrenadeTrajectoryImpactColor", {Default = Visuals.Combat_GrenadeTrajectoryImpactColor, Title = "Impact Color", Callback = function(Value)
-	UpdateTable(Visuals, "Combat_GrenadeTrajectoryImpactColor", Value)
+	Visuals.Combat_GrenadeTrajectoryImpactColor = Value
 end})
 
 GrenadeTrajectory_DepedencyBox:AddDropdown("Combat_GrenadeTrajectoryMode", {Text = "Mode", Default = Visuals.Combat_GrenadeTrajectoryMode, Values = {"2D", "3D"}, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_GrenadeTrajectoryMode", Value)
+	Visuals.Combat_GrenadeTrajectoryMode = Value
 end})
 
 GrenadeTrajectory_DepedencyBox:AddSlider("Combat_GrenadeTrajectoryBounces", {Text = "Bounces", Default = Visuals.Combat_GrenadeTrajectoryBounces, Min = 0, Max = 3, Rounding = 0, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_GrenadeTrajectoryBounces", Value)
+	Visuals.Combat_GrenadeTrajectoryBounces = Value
 end})
 
 GrenadeTrajectory_DepedencyBox:AddSlider("Combat_GrenadeTrajectoryThickness", {Text = "Thickness", Default = Visuals.Combat_GrenadeTrajectoryThickness, Min = 1, Max = 6, Rounding = 1, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_GrenadeTrajectoryThickness", Value)
+	Visuals.Combat_GrenadeTrajectoryThickness = Value
 end})
 
 Visuals_CombatGroupbox:AddToggle("Combat_RadarHack", {Text = "Radar Hack", Default = Visuals.Combat_RadarHack, Callback = function(Value)
-	UpdateTable(Visuals, "Combat_RadarHack", Value)
+	Visuals.Combat_RadarHack = Value
 end})
 
 Visuals_EnemyESPGroupbox:AddToggle("EnemyESP_MasterEnabled", {Text = "Master Switch", Default = Visuals.EnemyESP_MasterEnabled, Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_MasterEnabled", Value)
+	Visuals.EnemyESP_MasterEnabled = Value
+end}):AddKeyPicker("EnemyESP_MasterEnabled_Keybind", {Default = Visuals.EnemyESP_MasterEnabled_Keybind, Mode = "Toggle", Text = "ESP Master Keybind", SyncToggleState = true, ChangedCallback = function(Keybind)
+	Visuals.EnemyESP_MasterEnabled_Keybind = Keybind
+end, Callback = function(Value)
+	if type(Value) == "boolean" then
+		Toggles.EnemyESP_MasterEnabled:SetValue(Value)
+	end
 end})
 
 Visuals_EnemyESPGroupbox:AddSlider("EnemyESP_MasterOpacity", {Text = "Master Opacity", Default = Visuals.EnemyESP_MasterOpacity, Min = 0, Max = 100, Rounding = 0, Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_MasterOpacity", Value)
+	Visuals.EnemyESP_MasterOpacity = Value
+	for _,Group in next, Rendering_DrawingObjects do
+		for Index in next, {"Box", "Tag", "Dot", "Tracer", "Healthbar", "SkeletonHead", "SkeletonSpine", "SkeletonLeftShoulder", "SkeletonRightShoulder", "SkeletonLeftArm", "SkeletonRightArm", "SkeletonLeftHip", "SkeletonRightHip", "SkeletonLeftLeg", "SkeletonRightLeg"} do
+			Group[Index].Transparency = Value * 0.01
+		end
+	end
 end})
 
 Visuals_EnemyESPGroupbox:AddToggle("EnemyESP_Chams", {Text = "Toggle Highlight Chams", Default = Visuals.EnemyESP_Chams, Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_Chams", Value)
+	Visuals.EnemyESP_Chams = Value
 end}):AddColorPicker("EnemyESP_ChamsColor", {Default = Visuals.EnemyESP_ChamsColor, Title = "Chams Color", Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_ChamsColor", Value)
+	Visuals.EnemyESP_ChamsColor = Value
 end})
 
 local ChamsDependencyBox = Visuals_EnemyESPGroupbox:AddDependencyBox():SetupDependencies({{Toggles.EnemyESP_Chams, true}})
 
 ChamsDependencyBox:AddDropdown("EnemyESP_ChamsRendering", {Text = "Rendering", Default = Visuals.EnemyESP_ChamsRendering, Values = {"Fill", "Outline"}, Multi = true, Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_ChamsRendering", Value)
+	Visuals.EnemyESP_ChamsRendering = Value
 end})
 
 ChamsDependencyBox:AddDropdown("EnemyESP_ChamsStyle", {Text = "Style", Default = Visuals.EnemyESP_ChamsStyle, Values = {"Solid", "Visible"}, Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_ChamsStyle", Value)
+	Visuals.EnemyESP_ChamsStyle = Value
 end})
 
 ChamsDependencyBox:AddDependencyBox():SetupDependencies({{Options.EnemyESP_ChamsStyle, "Visible"}}):AddLabel("Visible Color"):AddColorPicker("EnemyESP_ChamsVisibleColor", {
 	Default = Visuals.EnemyESP_ChamsVisibleColor, Title = "Visible Color", Callback = function(Value)
-		UpdateTable(Visuals, "EnemyESP_ChamsVisibleColor", Value)
+		Visuals.EnemyESP_ChamsVisibleColor = Value
 	end
 })
 
 ChamsDependencyBox:AddToggle("EnemyESP_ChamsOccluded", {Text = "Occluded", Default = Visuals.EnemyESP_ChamsOccluded, Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_ChamsOccluded", Value)
+	Visuals.EnemyESP_ChamsOccluded = Value
 end})
 
 Visuals_EnemyESPGroupbox:AddToggle("EnemyESP_Dots", {Text = "Toggle Head Dots", Default = Visuals.EnemyESP_Dots, Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_Dots", Value)
+	Visuals.EnemyESP_Dots = Value
 end}):AddColorPicker("EnemyESP_DotColor", {Default = Visuals.EnemyESP_DotColor, Title = "Dot Color", Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_DotColor", Value)
+	Visuals.EnemyESP_DotColor = Value
+	UpdateProperty({"Dot"}, "Color", Value)
 end})
 
 Visuals_EnemyESPGroupbox:AddDependencyBox():SetupDependencies({{Toggles.EnemyESP_Dots, true}}):AddSlider("EnemyESP_DotSize", {
 	Text = "Size", Default = Visuals.EnemyESP_DotSize, Min = 1, Max = 10, Rounding = 0, Callback = function(Value)
-		UpdateTable(Visuals, "EnemyESP_DotSize", Value)
+		Visuals.EnemyESP_DotSize = Value
+		UpdateProperty({"Dot"}, "Radius", Value)
+	end
+})
+
+Visuals_EnemyESPGroupbox:AddToggle("EnemyESP_Skeletons", {Text = "Toggle Skeletons", Default = Visuals.EnemyESP_Skeletons, Callback = function(Value)
+	Visuals.EnemyESP_Skeletons = Value
+end}):AddColorPicker("EnemyESP_SkeletonsColor", {Default = Visuals.EnemyESP_SkeletonsColor, Title = "Skeleton Color", Callback = function(Value)
+	Visuals.EnemyESP_SkeletonsColor = Value
+	UpdateProperty({"SkeletonHead", "SkeletonSpine", "SkeletonLeftShoulder", "SkeletonRightShoulder", "SkeletonLeftArm", "SkeletonRightArm", "SkeletonLeftHip", "SkeletonRightHip", "SkeletonLeftLeg", "SkeletonRightLeg"}, "Color", Value)
+end})
+
+Visuals_EnemyESPGroupbox:AddDependencyBox():SetupDependencies({{Toggles.EnemyESP_Skeletons, true}}):AddSlider("EnemyESP_SkeletonsThickness", {
+	Text = "Thickness", Default = Visuals.EnemyESP_SkeletonsThickness, Min = 1, Max = 5, Rounding = 1, Callback = function(Value)
+		Visuals.EnemyESP_SkeletonsThickness = Value
+		UpdateProperty({"SkeletonHead", "SkeletonSpine", "SkeletonLeftShoulder", "SkeletonRightShoulder", "SkeletonLeftArm", "SkeletonRightArm", "SkeletonLeftHip", "SkeletonRightHip", "SkeletonLeftLeg", "SkeletonRightLeg"}, "Thickness", Value)
 	end
 })
 
 Visuals_EnemyESPGroupbox:AddToggle("EnemyESP_HeadTags", {Text = "Toggle Head Tags", Default = Visuals.EnemyESP_HeadTags, Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_HeadTags", Value)
+	Visuals.EnemyESP_HeadTags = Value
 end}):AddColorPicker("EnemyESP_TagColor", {Default = Visuals.EnemyESP_TagColor, Title = "Tag Color", Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_TagColor", Value)
+	Visuals.EnemyESP_TagColor = Value
+	UpdateProperty({"Tag"}, "Color", Value)
 end})
 
 local HeadTags_Depedencybox = Visuals_EnemyESPGroupbox:AddDependencyBox():SetupDependencies({{Toggles.EnemyESP_HeadTags, true}})
 
 HeadTags_Depedencybox:AddDropdown("EnemyESP_HeadTagElements", {Text = "Elements", Default = Visuals.EnemyESP_HeadTagElements, Values = {"Name", "Health", "Distance", "Visibility"}, Multi = true, Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_HeadTagElements", Value)
+	Visuals.EnemyESP_HeadTagElements = Value
 end})
 
 HeadTags_Depedencybox:AddSlider("EnemyESP_TagSize", {Text = "Size", Default = Visuals.EnemyESP_TagSize, Min = 8, Max = 32, Rounding = 0, Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_TagSize", Value)
+	Visuals.EnemyESP_TagSize = Value
+	UpdateProperty({"Tag"}, "Size", Value)
 end})
 
 Visuals_EnemyESPGroupbox:AddToggle("EnemyESP_Boxes", {Text = "Toggle Boxes", Default = Visuals.EnemyESP_Boxes, Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_Boxes", Value)
+	Visuals.EnemyESP_Boxes = Value
 end}):AddColorPicker("EnemyESP_BoxColor", {Default = Visuals.EnemyESP_BoxColor, Title = "Box Color", Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_BoxColor", Value)
+	Visuals.EnemyESP_BoxColor = Value
+	UpdateProperty({"Box"}, "Color", Value)
 end})
 
 Visuals_EnemyESPGroupbox:AddToggle("EnemyESP_Healthbars", {Text = "Toggle Healthbars", Default = Visuals.EnemyESP_Healthbars, Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_Healthbars", Value)
+	Visuals.EnemyESP_Healthbars = Value
 end}):AddColorPicker("EnemyESP_HealthbarColor", {Default = Visuals.EnemyESP_HealthbarColor, Title = "Healthbar Color", Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_HealthbarColor", Value)
+	Visuals.EnemyESP_HealthbarColor = Value
+	UpdateProperty({"Healthbar"}, "Color", Value)
 end})
 
 Visuals_EnemyESPGroupbox:AddDependencyBox():SetupDependencies({{Toggles.EnemyESP_Healthbars, true}}):AddSlider("EnemyESP_HealthbarWidth", {
 	Text = "Width", Default = Visuals.EnemyESP_HealthbarWidth, Min = 1, Max = 12, Rounding = 0, Callback = function(Value)
-		UpdateTable(Visuals, "EnemyESP_HealthbarWidth", Value)
+		Visuals.EnemyESP_HealthbarWidth = Value
 	end
 })
 
 Visuals_EnemyESPGroupbox:AddDependencyBox():SetupDependencies({{Toggles.EnemyESP_Boxes, true}}):AddSlider("EnemyESP_BoxThickness", {
 	Text = "Thickness", Default = Visuals.EnemyESP_BoxThickness, Min = 1, Max = 5, Rounding = 1, Callback = function(Value)
 		Visuals.EnemyESP_BoxThickness = Value
-		for _,DrawingGroup in next, Rendering_DrawingObjects do
-			if DrawingGroup.Box then
-				DrawingGroup.Box.Thickness = Value
-			end
-		end
+		UpdateProperty({"Box"}, "Thickness", Value)
 	end
 })
 
 Visuals_EnemyESPGroupbox:AddToggle("EnemyESP_Tracers", {Text = "Toggle Tracers", Default = Visuals.EnemyESP_Tracers, Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_Tracers", Value)
+	Visuals.EnemyESP_Tracers = Value
 end}):AddColorPicker("EnemyESP_TracerColor", {Default = Visuals.EnemyESP_TracerColor, Title = "Tracer Color", Callback = function(Value)
-	UpdateTable(Visuals, "EnemyESP_TracerColor", Value)
+	Visuals.EnemyESP_TracerColor = Value
+	UpdateProperty({"Tracer"}, "Color", Value)
 end})
 
 local TracersDependencyBox = Visuals_EnemyESPGroupbox:AddDependencyBox():SetupDependencies({{Toggles.EnemyESP_Tracers, true}})
@@ -2234,101 +2241,109 @@ end})
 
 TracersDependencyBox:AddSlider("EnemyESP_TracerThickness", {Text = "Thickness", Default = Visuals.EnemyESP_TracerThickness, Min = 1, Max = 5, Rounding = 1, Callback = function(Value)
 	Visuals.EnemyESP_TracerThickness = Value
-	for _,DrawingGroup in next, Rendering_DrawingObjects do
-		if DrawingGroup.Tracer then
-			DrawingGroup.Tracer.Thickness = Visuals.EnemyESP_TracerThickness
-		end
-	end
+	UpdateProperty({"Tracer"}, "Thickness", Value)
 end})
 
+World_Camera:AddToggle("Camera_FOVModificationEnabled", {Text = "FOV Modification", Default = Visuals.Camera_FOVModificationEnabled, Callback = function(Value)
+	Visuals.Camera_FOVModificationEnabled = Value
+end})
+
+World_Camera:AddDependencyBox():SetupDependencies({{Toggles.Camera_FOVModificationEnabled, true}}):AddSlider("Camera_FOVValue", {
+	Text = "FOV Value", Default = Visuals.Camera_FOVValue, Min = 30, Max = 120, Rounding = 0, Callback = function(Value)
+		Visuals.Camera_FOVValue = Value
+	end
+})
+
 World_Camera:AddToggle("Camera_ThirdPersonView", {Text = "Third Person View", Default = Visuals.Camera_ThirdPersonView, Callback = function(Value)
-	UpdateTable(Visuals, "Camera_ThirdPersonView", Value)
+	UpdateTable(Visuals, "Camera_ThirdPersonView", Value, function(Value2)
+		IsThirdPersonActive = Value2
+	end)
 end}):AddKeyPicker("Camera_ThirdPersonView_Keybind", {
-	Default = Visuals.Camera_ThirdPersonView_Keybind, Mode = "Toggle", Text = "Third Person View Keybind", ChangedCallback = function(Keybind)
-		UpdateTable(Visuals, "Camera_ThirdPersonView_Keybind", Keybind)
+	Default = Visuals.Camera_ThirdPersonView_Keybind, Mode = "Toggle", Text = "Third Person View Keybind", SyncToggleState = true, ChangedCallback = function(Keybind)
+		Visuals.Camera_ThirdPersonView_Keybind = Keybind
 	end, Callback = function(Value)
-		IsThirdPersonActive = Value
+		if type(Value) == "boolean" then
+			Toggles.Camera_ThirdPersonView:SetValue(Value)
+		end
 	end
 })
 
 local ThirdPersonDependencyBox = World_Camera:AddDependencyBox():SetupDependencies({{Toggles.Camera_ThirdPersonView, true}})
 
+ThirdPersonDependencyBox:AddToggle("Camera_ThirdPersonCameraCollision", {Text = "Camera Collision", Default = Visuals.Camera_ThirdPersonCameraCollision, Callback = function(Value)
+	Visuals.Camera_ThirdPersonCameraCollision = Value
+end})
+
+ThirdPersonDependencyBox:AddSlider("Camera_ThirdPersonOffsetX", {Text = "Offset X", Default = Visuals.Camera_ThirdPersonOffsetX, Min = -20, Max = 20, Rounding = 0, Callback = function(Value)
+	Visuals.Camera_ThirdPersonOffsetX = Value
+end})
+
+ThirdPersonDependencyBox:AddSlider("Camera_ThirdPersonOffsetY", {Text = "Offset Y", Default = Visuals.Camera_ThirdPersonOffsetY, Min = -20, Max = 20, Rounding = 0, Callback = function(Value)
+	Visuals.Camera_ThirdPersonOffsetY = Value
+end})
+
+ThirdPersonDependencyBox:AddSlider("Camera_ThirdPersonOffsetZ", {Text = "Offset Z", Default = Visuals.Camera_ThirdPersonOffsetZ, Min = -20, Max = 20, Rounding = 0, Callback = function(Value)
+	Visuals.Camera_ThirdPersonOffsetZ = Value
+end})
+
 ThirdPersonDependencyBox:AddToggle("Camera_ThirdPersonShowCharacter", {Text = "Show Character", Default = Visuals.Camera_ThirdPersonShowCharacter, Callback = function(Value)
-	UpdateTable(Visuals, "Camera_ThirdPersonShowCharacter", Value)
+	Visuals.Camera_ThirdPersonShowCharacter = Value
 end})
 
 local ShowCharacterDependencyBox = World_Camera:AddDependencyBox():SetupDependencies({{Toggles.Camera_ThirdPersonShowCharacter, true}})
 ShowCharacterDependencyBox:AddToggle("Camera_ThirdPersonShowCharacterWhileAiming", {Text = "Show Character While Aiming", Default = Visuals.Camera_ThirdPersonShowCharacterWhileAiming, Callback = function(Value)
-	UpdateTable(Visuals, "Camera_ThirdPersonShowCharacterWhileAiming", Value)
+	Visuals.Camera_ThirdPersonShowCharacterWhileAiming = Value
 end})
 
 ShowCharacterDependencyBox:AddToggle("Camera_ThirdPersonApplyAntiAimToCharacter", {Text = "Apply Anti Aim To Character", Default = Visuals.Camera_ThirdPersonApplyAntiAimToCharacter, Callback = function(Value)
-	UpdateTable(Visuals, "Camera_ThirdPersonApplyAntiAimToCharacter", Value)
+	Visuals.Camera_ThirdPersonApplyAntiAimToCharacter = Value
 end})
-
-ThirdPersonDependencyBox:AddToggle("Camera_ThirdPersonCameraCollision", {Text = "Camera Collision", Default = Visuals.Camera_ThirdPersonCameraCollision, Callback = function(Value)
-	UpdateTable(Visuals, "Camera_ThirdPersonCameraCollision", Value)
-end})
-
-ThirdPersonDependencyBox:AddSlider("Camera_ThirdPersonOffsetX", {Text = "Offset X", Default = Visuals.Camera_ThirdPersonOffsetX, Min = -20, Max = 20, Rounding = 0, Callback = function(Value)
-	UpdateTable(Visuals, "Camera_ThirdPersonOffsetX", Value)
-end})
-
-ThirdPersonDependencyBox:AddSlider("Camera_ThirdPersonOffsetY", {Text = "Offset Y", Default = Visuals.Camera_ThirdPersonOffsetY, Min = -20, Max = 20, Rounding = 0, Callback = function(Value)
-	UpdateTable(Visuals, "Camera_ThirdPersonOffsetY", Value)
-end})
-
-ThirdPersonDependencyBox:AddSlider("Camera_ThirdPersonOffsetZ", {Text = "Offset Z", Default = Visuals.Camera_ThirdPersonOffsetZ, Min = -20, Max = 20, Rounding = 0, Callback = function(Value)
-	UpdateTable(Visuals, "Camera_ThirdPersonOffsetZ", Value)
-end})
-
-World_Camera:AddToggle("Camera_FOVModificationEnabled", {Text = "FOV Modification", Default = Visuals.Camera_FOVModificationEnabled, Callback = function(Value)
-	UpdateTable(Visuals, "Camera_FOVModificationEnabled", Value)
-end})
-
-World_Camera:AddDependencyBox():SetupDependencies({{Toggles.Camera_FOVModificationEnabled, true}}):AddSlider("Camera_FOVValue", {
-	Text = "FOV Value", Default = Visuals.Camera_FOVValue, Min = 30, Max = 120, Rounding = 0, Callback = function(Value)
-		UpdateTable(Visuals, "Camera_FOVValue", Value)
-	end
-})
 
 World_ViewModel:AddToggle("Viewmodel_Chams", {Text = "Viewmodel Chams", Default = Visuals.Viewmodel_Chams, Callback = function(Value)
-	UpdateTable(Visuals, "Viewmodel_Chams", Value)
+	Visuals.Viewmodel_Chams = Value
 end}):AddColorPicker("Viewmodel_ChamsColor", {Default = Visuals.Viewmodel_ChamsColor, Title = "Chams Color", Callback = function(Value)
-	UpdateTable(Visuals, "Viewmodel_ChamsColor", Value)
+	Visuals.Viewmodel_ChamsColor = Value
 end})
 
 local ViewmodelChamsDependencyBox = World_ViewModel:AddDependencyBox():SetupDependencies({{Toggles.Viewmodel_Chams, true}})
 
 ViewmodelChamsDependencyBox:AddDropdown("Viewmodel_ChamsTargets", {Text = "Targets", Default = {"Arms", "Weapon"}, Multi = true, Values = {"Arms", "Weapon"}, Callback = function(Value)
-	UpdateTable(Visuals, "Viewmodel_ChamsTargets", Value)
+	Visuals.Viewmodel_ChamsTargets = Value
 end})
 
 ViewmodelChamsDependencyBox:AddDropdown("Viewmodel_ChamsType", {Text = "Type", Default = Visuals.Viewmodel_ChamsType, Values = {"ForceField", "Neon", "Glass", "Plastic"}, Callback = function(Value)
-	UpdateTable(Visuals, "Viewmodel_ChamsType", Value)
+	Visuals.Viewmodel_ChamsType = Value
 end})
 
 local ViewmodelTranslucentDependencyBox = ViewmodelChamsDependencyBox:AddDependencyBox():SetupDependencies({{Options.Viewmodel_ChamsType, {"Neon", "Glass", "Plastic"}}})
 
 ViewmodelTranslucentDependencyBox:AddToggle("Viewmodel_ChamsTranslucent", {Text = "Translucent", Default = Visuals.Viewmodel_ChamsTranslucent, Callback = function(Value)
-	UpdateTable(Visuals, "Viewmodel_ChamsTranslucent", Value)
+	Visuals.Viewmodel_ChamsTranslucent = Value
 end})
 
 World_ViewModel:AddToggle("Viewmodel_NoSleeves", {Text = "No Sleeves", Default = Visuals.Viewmodel_NoSleeves, Callback = function(Value)
-	UpdateTable(Visuals, "Viewmodel_NoSleeves", Value)
+	Visuals.Viewmodel_NoSleeves = Value
 end})
 
 World_Lighting:AddToggle("Lighting_ModifyLighting", {Text = "Lighting Modification", Default = Visuals.Lighting_ModifyLighting, Callback = function(Value)
 	UpdateTable(Visuals, "Lighting_ModifyLighting", Value, function()
+		if not Visuals.Lighting_ModifyLighting then
+			for Connection in next, LightingCache.Connections do
+				Connection:Disconnect()
+			end
+			table.clear(LightingCache.Connections)
+			RefreshLighting(true)
+			return
+		end
+
+		for Property in next, LightingCache.OriginalValues do
+			LightingCache.OriginalValues[Property] = Lighting[Property]
+		end
+
 		for Connection in next, LightingCache.Connections do
 			Connection:Disconnect()
 		end
 		table.clear(LightingCache.Connections)
-
-		if not Visuals.Lighting_ModifyLighting then
-			RefreshLighting(true)
-			return
-		end
 
 		local Properties = {"Ambient", "OutdoorAmbient", "ExposureCompensation", "EnvironmentDiffuseScale", "EnvironmentSpecularScale", "ShadowSoftness"}
 		for _,Property in ipairs(Properties) do
@@ -2349,61 +2364,73 @@ end})
 local LightingDependencyBox = World_Lighting:AddDependencyBox():SetupDependencies({{Toggles.Lighting_ModifyLighting, true}})
 
 LightingDependencyBox:AddSlider("Lighting_ExposureCompensation", {Text = "Exposure Compensation", Default = Visuals.Lighting_ExposureCompensation, Min = -5, Max = 5, Rounding = 1, Callback = function(Value)
-	UpdateTable(Visuals, "Lighting_ExposureCompensation", Value, function(Value)
-		Lighting.ExposureCompensation = Value
-	end) 
+	UpdateTable(Visuals, "Lighting_ExposureCompensation", Value, function(Value2)
+		if Visuals.Lighting_ModifyLighting then
+			Lighting.ExposureCompensation = Value2
+		end
+	end)
 end})
 
 LightingDependencyBox:AddLabel("Ambient"):AddColorPicker("Lighting_Ambient", {Default = Visuals.Lighting_Ambient, Title = "Ambient Color", Callback = function(Value)
-	UpdateTable(Visuals, "Lighting_Ambient", Value, function(Value)
-		Lighting.Ambient = Value
+	UpdateTable(Visuals, "Lighting_Ambient", Value, function(Value2)
+		if Visuals.Lighting_ModifyLighting then
+			Lighting.Ambient = Value2
+		end
 	end)
 end})
 
 LightingDependencyBox:AddLabel("Outdoor Ambient"):AddColorPicker("Lighting_OutdoorAmbient", {Default = Visuals.Lighting_OutdoorAmbient, Title = "Outdoor Ambient", Callback = function(Value)
-	UpdateTable(Visuals, "Lighting_OutdoorAmbient", Value, function(Value)
-		Lighting.OutdoorAmbient = Value
+	UpdateTable(Visuals, "Lighting_OutdoorAmbient", Value, function(Value2)
+		if Visuals.Lighting_ModifyLighting then
+			Lighting.OutdoorAmbient = Value2
+		end
 	end)
 end})
 
 LightingDependencyBox:AddSlider("Lighting_EnvironmentDiffuseScale", {Text = "Diffuse Scale", Default = Visuals.Lighting_EnvironmentDiffuseScale, Min = 0, Max = 1, Rounding = 1, Callback = function(Value)
-	UpdateTable(Visuals, "Lighting_EnvironmentDiffuseScale", Value, function(Value) 
-		Lighting.EnvironmentDiffuseScale = Value
+	UpdateTable(Visuals, "Lighting_EnvironmentDiffuseScale", Value, function(Value2)
+		if Visuals.Lighting_ModifyLighting then
+			Lighting.EnvironmentDiffuseScale = Value2
+		end
 	end)
 end})
 
 LightingDependencyBox:AddSlider("Lighting_EnvironmentSpecularScale", {Text = "Specular Scale", Default = Visuals.Lighting_EnvironmentSpecularScale, Min = 0, Max = 1, Rounding = 1, Callback = function(Value)
-	UpdateTable(Visuals, "Lighting_EnvironmentSpecularScale", Value, function(Value)
-		Lighting.EnvironmentSpecularScale = Value
+	UpdateTable(Visuals, "Lighting_EnvironmentSpecularScale", Value, function(Value2)
+		if Visuals.Lighting_ModifyLighting then
+			Lighting.EnvironmentSpecularScale = Value2
+		end
 	end)
 end})
 
 LightingDependencyBox:AddSlider("Lighting_ShadowSoftness", {Text = "Shadow Softness", Default = Visuals.Lighting_ShadowSoftness, Min = 0, Max = 1, Rounding = 1, Callback = function(Value)
-	UpdateTable(Visuals, "Lighting_ShadowSoftness", Value, function(Value)
-		Lighting.ShadowSoftness = Value
+	UpdateTable(Visuals, "Lighting_ShadowSoftness", Value, function(Value2)
+		if Visuals.Lighting_ModifyLighting then
+			Lighting.ShadowSoftness = Value2
+		end
 	end)
 end})
 
 World_Lighting:AddToggle("Lighting_Flashlight", {Text = "Flashlight", Default = Visuals.Lighting_Flashlight, Callback = function(Value)
-	UpdateTable(Visuals, "Lighting_Flashlight", Value)
+	Visuals.Lighting_Flashlight = Value
 end})
 
 local FlashlightDependencyBox = World_Lighting:AddDependencyBox():SetupDependencies({{Toggles.Lighting_Flashlight, true}})
 
 FlashlightDependencyBox:AddLabel("Flashlight Color"):AddColorPicker("Lighting_FlashlightColor", {Default = Visuals.Lighting_FlashlightColor, Title = "Flashlight Color", Callback = function(Value)
-	UpdateTable(Visuals, "Lighting_FlashlightColor", Value)
+	Visuals.Lighting_FlashlightColor = Value
 end})
 
 FlashlightDependencyBox:AddSlider("Lighting_FlashlightBrightness", {Text = "Brightness", Default = Visuals.Lighting_FlashlightBrightness, Min = 0, Max = 10, Rounding = 1, Callback = function(Value)
-	UpdateTable(Visuals, "Lighting_FlashlightBrightness", Value)
+	Visuals.Lighting_FlashlightBrightness = Value
 end})
 
 FlashlightDependencyBox:AddSlider("Lighting_FlashlightRange", {Text = "Range", Default = Visuals.Lighting_FlashlightRange, Min = 0, Max = 60, Rounding = 0, Callback = function(Value)
-	UpdateTable(Visuals, "Lighting_FlashlightRange", Value)
+	Visuals.Lighting_FlashlightRange = Value
 end})
 
 FlashlightDependencyBox:AddSlider("Lighting_FlashlightAngle", {Text = "Angle", Default = Visuals.Lighting_FlashlightAngle, Min = 0, Max = 180, Rounding = 0, Callback = function(Value)
-	UpdateTable(Visuals, "Lighting_FlashlightAngle", Value)
+	Visuals.Lighting_FlashlightAngle = Value
 end})
 
 local Settings_UserInterface = Tabs.Settings:AddLeftGroupbox("User Interface")
@@ -2414,24 +2441,19 @@ end})
 
 local Settings_Advanced = Tabs.Settings:AddRightGroupbox("Advanced")
 
-Settings_Advanced:AddToggle("Advanced_ESPFramerateCap", {Text = "ESP Framerate Cap", Default = Settings.Advanced_ESPFramerateCap, Callback = function(Value)
-	UpdateTable(Settings, "Advanced_ESPFramerateCap", Value)
-end})
-Settings_Advanced:AddDependencyBox():SetupDependencies({{Toggles.Advanced_ESPFramerateCap, true}}):AddSlider("Advanced_ESPFPSCapValue", {
-	Text = "FPS Cap", Default = Settings.Advanced_ESPFPSCapValue, Min = 1, Max = 360, Rounding = 0, Callback = function(Value)
-		UpdateTable(Settings, "Advanced_ESPFPSCapValue", Value)
-	end
-})
-
 Settings_Advanced:AddToggle("Advanced_MultiPointEnabled", {Text = "Multi-Point Raycasting", Default = Settings.Advanced_MultiPointEnabled, Callback = function(Value)
-	UpdateTable(Settings, "Advanced_MultiPointEnabled", Value)
+	Settings.Advanced_MultiPointEnabled = Value
 end})
 local MultiPointDependencyBox = Settings_Advanced:AddDependencyBox():SetupDependencies({{Toggles.Advanced_MultiPointEnabled, true}})
 MultiPointDependencyBox:AddSlider("Advanced_MultiPointScale", {Text = "Scale", Default = Settings.Advanced_MultiPointScale, Min = 2, Max = 10, Rounding = 0, Callback = function(Value)
-	UpdateTable(Settings, "Advanced_MultiPointScale", Value)
+	Settings.Advanced_MultiPointScale = Value
 end})
 MultiPointDependencyBox:AddSlider("Advanced_MultiPointLayers", {Text = "Layers", Default = Settings.Advanced_MultiPointLayers, Min = 1, Max = 5, Rounding = 0, Callback = function(Value)
-	UpdateTable(Settings, "Advanced_MultiPointLayers", Value)
+	Settings.Advanced_MultiPointLayers = Value
+end})
+
+Settings_Advanced:AddButton({Text = "Rejoin Server", Func = function()
+	game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
 end})
 
 local RemoteEvent = ReplicatedStorage:WaitForChild("RemoteEvent")
@@ -2524,7 +2546,7 @@ if RemoteEvent then
 					Part.Color = Color
 					Part.Size = Vector3.new(6, 1000, 6)
 					Part.Position = Origin + Direction
-					
+
 					Part.Parent = Terrain
 					local PointLight = ns__cloneref(Instance.new("PointLight"))
 					PointLight.Brightness = 3
@@ -2545,7 +2567,7 @@ local ThirdPersonLastPosition = nil
 local ThirdPersonDeltaTime = 0
 
 task.spawn(function()
-	FakeReplicationObject = ReplicationObject.new(setmetatable({}, {
+	FakeReplicationObject = GetModule("ReplicationObject").new(setmetatable({}, {
 		__index = function(_,Index)
 			if Index == "GetPropertyChangedSignal" then
 				return function(_,Property)
@@ -2559,7 +2581,7 @@ task.spawn(function()
 	}))
 end)
 
-local RaycastStep, GrenadeTrajectory2DLines, GrenadeTrajectory3DSegments = 1/60, {}, {}
+local GrenadeTrajectory2DLines, GrenadeTrajectory3DSegments = {}, {}
 local GrenadeTrajectory2DMarker = CreateDrawing("Circle", {Filled = true, NumSides = 12})
 local GrenadeTrajectory3DMarker = Create("SphereHandleAdornment", CoreGui, {Radius = 0.25, ZIndex = 5, AlwaysOnTop = true, Adornee = Terrain})
 RunService.Heartbeat:Connect(function(DeltaTime)
@@ -2604,9 +2626,9 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 
 			if IsFakeSpawned or not FakeThirdPersonObject then
 				local PlayerData = PlayerDataClientInterface.getPlayerData()
-				local Settings = PlayerData and PlayerData.settings
-				if Settings then
-					local ClassData = Settings.classdata
+				local SettingsData = PlayerData and PlayerData.settings
+				if SettingsData then
+					local ClassData = SettingsData.classdata
 					if ClassData then
 						FakeReplicationObject._player = LocalPlayer
 						FakeReplicationObject:spawn(nil, ClassData[ClassData.curclass])
@@ -2626,7 +2648,7 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 			if FakeThirdPersonObject then
 				local Angles = CameraInterface:getActiveCamera():getAngles()
 				if Miscellaneous.Movement_AntiAimEnabled and Visuals.Camera_ThirdPersonApplyAntiAimToCharacter then
-					Angles = ComputeAntiAimAngles(Angles)
+					Angles = GetAntiAimAngles(Angles)
 				end
 
 				FakeReplicationObject._posspring.t = Position
@@ -2685,12 +2707,8 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 		end
 	end
 
-	if LocalHumanoid and Miscellaneous.Movement_BunnyHop and UserInputService:IsKeyDown(Enum.KeyCode.Space) and LocalHumanoid.FloorMaterial ~= Enum.Material.Air then
-		local LocalCharacter = GetLocalCharacter()
-		if LocalCharacter then
-			rawset(LocalCharacter, "_lastJumpTime", 0)
-			LocalCharacter:jump(4)
-		end
+	if LocalHumanoid and Miscellaneous.Movement_BunnyHop and UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+		LocalHumanoid.Jump = true
 	end
 
 	local Now = os.clock()
@@ -2779,12 +2797,11 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 		local TargetFlags = table.create(6)
 		for EntryIndex = 1, #SortedEntries do
 			local Entry = SortedEntries[EntryIndex]
-			local Character = GetCharacterModelHash(Entry._thirdPersonObject)
+			local Character = Entry._thirdPersonObject._characterModelHash
 
 			local Head, Torso = Character.Head, Character.Torso
 			local LeftArm, RightArm = Character["Left Arm"], Character["Right Arm"]
 			local LeftLeg, RightLeg = Character["Left Leg"], Character["Right Leg"]
-
 			local TargetCount = 0
 
 			if RageBotPart == "Head" then
@@ -2871,13 +2888,13 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 				if not CurrentVelocity then
 					continue
 				end
-				
+
 				if PenetrationDetection and BulletCheck(Origin, CurrentTarget, CurrentVelocity, BulletAcceleration, PenetrationDepth, RaycastStep) then
 					NewOrigin = Origin
 					NewTarget = CurrentTarget
 					Velocity = CurrentVelocity
 					break
-				elseif IsPart and RageBot_CanHit(TargetPart, Layers) then
+				elseif IsPart and RageBot_CanHit(TargetPart, Layers, TargetPart.Size * 0.5) then
 					NewOrigin = Origin
 					NewTarget = CurrentTarget
 					Velocity = CurrentVelocity
@@ -2888,21 +2905,24 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 			if NewOrigin then
 				local MagCount = Weapon._magCount
 				if MagCount < 1 then
-					local SpareCount, MagSize = Weapon._spareCount, WeaponData.magsize
-					if SpareCount >= MagSize then
-						Weapon._magCount = MagSize
-						Weapon._spareCount = SpareCount - Weapon._magCount
+					local ReloadCount = WeaponData.magsize
+					if ReloadCount > 0 and Weapon._spareCount > 0 then
+						NetworkClientSend(NetworkClient, "reload")
+					end
+
+					if ReloadCount < Weapon._spareCount then
+						Weapon._magCount += ReloadCount
+						Weapon._spareCount -= ReloadCount
 					else
-						Weapon._magCount = SpareCount
+						Weapon._magCount += Weapon._spareCount
 						Weapon._spareCount = 0
 					end
-					NetworkClientSend(NetworkClient, "reload")
 				end
 
 				local IsSinglePellet = false
 				local PelletCount =  WeaponData.pelletcount
 				if not PelletCount then
-					PelletCount = 1 
+					PelletCount = 1
 					IsSinglePellet = true
 				end
 
@@ -2977,10 +2997,269 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 	end
 end)
 
-local FOVCircle = CreateDrawing("Circle", {Visible = false, Filled = false, Color = Aiming.Aimbot_FOVColor, Position = ScreenCenter, Thickness = 1})
-local TargetTracer = CreateDrawing("Line", {Visible = false, Color = Aiming.Aimbot_TargetTracerColor, Thickness = 1.5})
-local LastESPUpdateTime, ns__mousemoverel = 0, mousemoverel or function(...)
+local ns__mousemoverel = mousemoverel or function(...)
 	return (...)
+end
+
+local function UpdateESP(LocalHeadPosition)
+	if Visuals.EnemyESP_MasterEnabled then
+		local GlobalOpacity = Visuals.EnemyESP_MasterOpacity * 0.01
+		OperateOnAllEntries(function(Player, Entry)
+			if not Entry._isEnemy or not Entry._alive then
+				return ClearESP(Player)
+			end
+
+			local Character = Entry._thirdPersonObject._characterModelHash
+			local Head = Character.Head
+			local Torso = Character.Torso
+			local LeftArm = Character["Left Arm"]
+			local RightArm = Character["Right Arm"]
+			local LeftLeg = Character["Left Leg"]
+			local RightLeg = Character["Right Leg"]
+			local HighlightGroup = Rendering_Highlights[Player]
+			if not HighlightGroup then
+				HighlightGroup = {}
+				Rendering_Highlights[Player] = HighlightGroup
+			end
+
+			if Visuals.EnemyESP_Chams then
+				local ChamsColor
+				if Visuals.EnemyESP_ChamsStyle == "Visible" and VisibilityCheck(Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg) then
+					ChamsColor = Visuals.EnemyESP_ChamsVisibleColor
+				else
+					ChamsColor = Visuals.EnemyESP_ChamsColor
+				end
+
+				local ChamsRendering = Visuals.EnemyESP_ChamsRendering
+				local RenderFill, RenderOutline = ChamsRendering.Fill, ChamsRendering.Outline
+				if RenderFill or RenderOutline then
+					local Highlight = HighlightGroup.Full
+					if not Highlight then
+						Highlight = ns__cloneref(Instance.new("Highlight"))
+						Highlight.Parent = CoreGui
+						HighlightGroup.Full = Highlight
+					end
+
+					Highlight.DepthMode = Visuals.EnemyESP_ChamsOccluded and Enum.HighlightDepthMode.Occluded or Enum.HighlightDepthMode.AlwaysOnTop
+					Highlight.Adornee = Head.Parent
+					local Opacity = 1 - GlobalOpacity
+					Highlight.Enabled = true
+					Highlight.FillColor = ChamsColor
+					Highlight.OutlineColor = DarkerColorCache[ChamsColor]
+					Highlight.FillTransparency = RenderFill and Opacity or 1
+					Highlight.OutlineTransparency = RenderOutline and Opacity or 1
+				else
+					local Full = HighlightGroup.Full
+					if Full then
+						HighlightGroup.Full = nil
+						Full:Destroy()
+					end
+				end
+			else
+				local Full = HighlightGroup.Full
+				if Full then
+					HighlightGroup.Full = nil
+					Full:Destroy()
+				end
+			end
+
+			local DrawingGroup = Rendering_DrawingObjects[Player]
+			if not DrawingGroup then
+				DrawingGroup = {
+					Box = CreateDrawing("Square", {Filled = false, Color = Visuals.EnemyESP_BoxColor, Thickness = Visuals.EnemyESP_BoxThickness}),
+					HealthbarOutline = CreateDrawing("Square", {Filled = false, Color = Color3.fromRGB(255, 255, 255), Thickness = 1}),
+					HealthbarBackground = CreateDrawing("Square", {Filled = true, Color = Color3.fromRGB(8, 8, 8)}),
+					Healthbar = CreateDrawing("Square", {Filled = true, Color = Visuals.EnemyESP_HealthbarColor}),
+					Tag = CreateDrawing("Text", {Size = Visuals.EnemyESP_TagSize, Outline = true, Center = true, Color = Visuals.EnemyESP_TagColor}),
+					Dot = CreateDrawing("Circle", {Filled = true, Radius = Visuals.EnemyESP_DotSize, Color = Visuals.EnemyESP_DotColor}),
+					Tracer = CreateDrawing("Line", {Color = Visuals.EnemyESP_TracerColor, Thickness = Visuals.EnemyESP_TracerThickness}),
+					SkeletonHead = CreateDrawing("Line", {Color = Visuals.EnemyESP_SkeletonsColor, Thickness = Visuals.EnemyESP_SkeletonsThickness}),
+					SkeletonSpine = CreateDrawing("Line", {Color = Visuals.EnemyESP_SkeletonsColor, Thickness = Visuals.EnemyESP_SkeletonsThickness}),
+					SkeletonLeftShoulder = CreateDrawing("Line", {Color = Visuals.EnemyESP_SkeletonsColor, Thickness = Visuals.EnemyESP_SkeletonsThickness}),
+					SkeletonRightShoulder = CreateDrawing("Line", {Color = Visuals.EnemyESP_SkeletonsColor, Thickness = Visuals.EnemyESP_SkeletonsThickness}),
+					SkeletonLeftArm = CreateDrawing("Line", {Color = Visuals.EnemyESP_SkeletonsColor, Thickness = Visuals.EnemyESP_SkeletonsThickness}),
+					SkeletonRightArm = CreateDrawing("Line", {Color = Visuals.EnemyESP_SkeletonsColor, Thickness = Visuals.EnemyESP_SkeletonsThickness}),
+					SkeletonLeftHip = CreateDrawing("Line", {Color = Visuals.EnemyESP_SkeletonsColor, Thickness = Visuals.EnemyESP_SkeletonsThickness}),
+					SkeletonRightHip = CreateDrawing("Line", {Color = Visuals.EnemyESP_SkeletonsColor, Thickness = Visuals.EnemyESP_SkeletonsThickness}),
+					SkeletonLeftLeg = CreateDrawing("Line", {Color = Visuals.EnemyESP_SkeletonsColor, Thickness = Visuals.EnemyESP_SkeletonsThickness}),
+					SkeletonRightLeg = CreateDrawing("Line", {Color = Visuals.EnemyESP_SkeletonsColor, Thickness = Visuals.EnemyESP_SkeletonsThickness}),
+				}
+				Rendering_DrawingObjects[Player] = DrawingGroup
+				for _,DrawingObject in next, DrawingGroup do
+					DrawingObject.Transparency = GlobalOpacity
+				end
+			end
+
+			local Box, Tag, Dot, Tracer, AimLine, AimArrow1, AimArrow2 = DrawingGroup.Box, DrawingGroup.Tag, DrawingGroup.Dot, DrawingGroup.Tracer, DrawingGroup.AimLine, DrawingGroup.AimArrow1, DrawingGroup.AimArrow2
+			local HealthbarOutline, HealthbarBackground, Healthbar = DrawingGroup.HealthbarOutline, DrawingGroup.HealthbarBackground, DrawingGroup.Healthbar
+			local SkeletonHead, SkeletonSpine, SkeletonLeftShoulder, SkeletonRightShoulder, SkeletonLeftArm, SkeletonRightArm, SkeletonLeftHip, SkeletonRightHip, SkeletonLeftLeg, SkeletonRightLeg = DrawingGroup.SkeletonHead, DrawingGroup.SkeletonSpine, DrawingGroup.SkeletonLeftShoulder, DrawingGroup.SkeletonRightShoulder, DrawingGroup.SkeletonLeftArm, DrawingGroup.SkeletonRightArm, DrawingGroup.SkeletonLeftHip, DrawingGroup.SkeletonRightHip, DrawingGroup.SkeletonLeftLeg, DrawingGroup.SkeletonRightLeg
+
+			local HeadPosition = Head.Position
+			local HeadScreen, HeadOnScreen = WorldToViewportPoint(HeadPosition)
+
+			if not HeadOnScreen then
+				SetProperty(Box, "Visible", false)
+				SetProperty(Tag, "Visible", false)
+				SetProperty(Dot, "Visible", false)
+				SetProperty(Tracer, "Visible", false)
+				SetProperty(HealthbarOutline, "Visible", false)
+				SetProperty(HealthbarBackground, "Visible", false)
+				SetProperty(Healthbar, "Visible", false)
+				SetProperty(SkeletonHead, "Visible", false)
+				SetProperty(SkeletonSpine, "Visible", false)
+				SetProperty(SkeletonLeftShoulder, "Visible", false)
+				SetProperty(SkeletonRightShoulder, "Visible", false)
+				SetProperty(SkeletonLeftArm, "Visible", false)
+				SetProperty(SkeletonRightArm, "Visible", false)
+				SetProperty(SkeletonLeftHip, "Visible", false)
+				SetProperty(SkeletonRightHip, "Visible", false)
+				SetProperty(SkeletonLeftLeg, "Visible", false)
+				SetProperty(SkeletonRightLeg, "Visible", false)
+				return
+			end
+
+			local HeadScreenX = HeadScreen.X
+			local TorsoPosition = Torso.Position
+			local TopScreen, TopOnScreen = Camera:WorldToViewportPoint(HeadPosition + Vector3.new(0, Head.Size.Y * 0.5 + 1.2, 0))
+			local BottomScreen, BottomOnScreen = Camera:WorldToViewportPoint(TorsoPosition - Vector3.new(0, Torso.Size.Y * 0.5 + 3.0, 0))
+			local BottomScreenY = BottomScreen.Y
+
+			if TopOnScreen and BottomOnScreen then
+				local TopScreenY = TopScreen.Y
+				local BoxHeight = BottomScreenY - TopScreenY
+				local BoxWidth = BoxHeight * 0.65
+				local Health = Entry:getHealth()
+
+				if Visuals.EnemyESP_Boxes then
+					SetProperty(Box, "Visible", true)
+					SetProperty(Box, "Size", Vector2.new(BoxWidth, BoxHeight))
+					SetProperty(Box, "Position", Vector2.new(HeadScreenX - BoxWidth * 0.5, TopScreenY))
+				else
+					SetProperty(Box, "Visible", false)
+				end
+
+				if Visuals.EnemyESP_HeadTags then
+					SetProperty(Tag, "Visible", true)
+
+					local Elements = Visuals.EnemyESP_HeadTagElements
+					local Text = ""
+					if Elements.Name then
+						Text = Player.Name
+					end
+
+					if Elements.Health then
+						Text ..= (Text ~= "" and (" [") or "[") .. tostring(math.floor(Health)) .. "]"
+					end
+
+					if Elements.Distance then
+						local Distance = math.floor((LocalHeadPosition - TorsoPosition).Magnitude)
+						Text ..= (Text ~= "" and (" [%dm]"):format(Distance) or ("[%dm]"):format(Distance))
+					end
+
+					if Elements.Visibility then
+						local Visibility = VisibilityCheck(Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg) and "[Visible]" or "[Hidden]"
+						Text ..= (Text ~= "" and (" " .. Visibility) or Visibility)
+					end
+
+					SetProperty(Tag, "Text", Text)
+					SetProperty(Tag, "Position", Vector2.new(HeadScreenX, TopScreenY - Tag.Size - 3))
+				else
+					SetProperty(Tag, "Visible", false)
+				end
+
+				if Visuals.EnemyESP_Healthbars then
+					local BarWidth = math.clamp(Visuals.EnemyESP_HealthbarWidth, 3, 8)
+					local BarHeight = math.max(24, BoxHeight * 0.9)
+					local BarX = HeadScreenX + BoxWidth * 0.5 + 5
+					local BarY = TopScreenY + (BoxHeight - BarHeight) * 0.5
+					local FillHeight = math.max(1, math.floor((BarHeight - 2) * math.clamp(Health * 0.01, 0, 1)))
+
+					SetProperty(HealthbarOutline, "Visible", true)
+					SetProperty(HealthbarOutline, "Size", Vector2.new(BarWidth, BarHeight))
+					SetProperty(HealthbarOutline, "Position", Vector2.new(BarX, BarY))
+
+					SetProperty(HealthbarBackground, "Visible", true)
+					SetProperty(HealthbarBackground, "Size", Vector2.new(BarWidth - 2, BarHeight - 2))
+					SetProperty(HealthbarBackground, "Position", Vector2.new(BarX + 1, BarY + 1))
+
+					SetProperty(Healthbar, "Visible", true)
+					SetProperty(Healthbar, "Size", Vector2.new(BarWidth - 2, FillHeight))
+					SetProperty(Healthbar, "Position", Vector2.new(BarX + 1, BarY + 1 + ((BarHeight - 2) - FillHeight)))
+				else
+					SetProperty(HealthbarOutline, "Visible", false)
+					SetProperty(HealthbarBackground, "Visible", false)
+					SetProperty(Healthbar, "Visible", false)
+				end
+			else
+				SetProperty(Box, "Visible", false)
+				SetProperty(Tag, "Visible", false)
+				SetProperty(HealthbarOutline, "Visible", false)
+				SetProperty(HealthbarBackground, "Visible", false)
+				SetProperty(Healthbar, "Visible", false)
+			end
+
+			if Visuals.EnemyESP_Dots then
+				SetProperty(Dot, "Visible", true)
+				SetProperty(Dot, "Position", HeadScreen)
+			else
+				SetProperty(Dot, "Visible", false)
+			end
+
+			if Visuals.EnemyESP_Skeletons then
+				local TorsoCFrame = Torso.CFrame
+				local NeckJoint, HeadSize, HeadCFrame = TorsoCFrame * Vector3.new(0, 1.5, 0), Head.Size, Head.CFrame
+				DrawBone(SkeletonHead, NeckJoint, HeadCFrame.Position + HeadCFrame.UpVector * math.max(math.abs(HeadSize.X), math.abs(HeadSize.Y), math.abs(HeadSize.Z)) * 0.5)
+
+				local LowerTorso = TorsoCFrame.Position
+				DrawBone(SkeletonSpine, NeckJoint, LowerTorso)
+
+				local LeftShoulder, RightShoulder = TorsoCFrame * Vector3.new(-0.5, 0.5, 0), TorsoCFrame * Vector3.new(0.5, 0.5, 0)
+				DrawBone(SkeletonLeftShoulder, NeckJoint, LeftShoulder)
+				DrawBone(SkeletonRightShoulder, NeckJoint, RightShoulder)
+				DrawBone(SkeletonLeftArm, LeftShoulder, LeftArm.CFrame.Position + (LeftArm.CFrame.Position - LeftShoulder).Unit * 1.5)
+				DrawBone(SkeletonRightArm, RightShoulder, RightArm.CFrame.Position + (RightArm.CFrame.Position - RightShoulder).Unit * 1.5)
+
+				local LeftHip = TorsoCFrame * Vector3.new(-0.5, -0.5, 0)
+				local RightHip = TorsoCFrame * Vector3.new(0.5, -0.5, 0)
+				DrawBone(SkeletonLeftHip, LowerTorso, LeftHip)
+				DrawBone(SkeletonRightHip, LowerTorso, RightHip)
+
+				local ThirdPersonObject = Entry._thirdPersonObject
+				DrawBone(SkeletonLeftLeg, LeftHip, ThirdPersonObject._leftFoot.pos)
+				DrawBone(SkeletonRightLeg, RightHip, ThirdPersonObject._rightFoot.pos)
+			else
+				SetProperty(SkeletonHead, "Visible", false)
+				SetProperty(SkeletonSpine, "Visible", false)
+				SetProperty(SkeletonLeftShoulder, "Visible", false)
+				SetProperty(SkeletonRightShoulder, "Visible", false)
+				SetProperty(SkeletonLeftArm, "Visible", false)
+				SetProperty(SkeletonRightArm, "Visible", false)
+				SetProperty(SkeletonLeftHip, "Visible", false)
+				SetProperty(SkeletonRightHip, "Visible", false)
+				SetProperty(SkeletonLeftLeg, "Visible", false)
+				SetProperty(SkeletonRightLeg, "Visible", false)
+			end
+
+			if Visuals.EnemyESP_Tracers then
+				local Origin = Visuals.EnemyESP_TracerOrigin
+				if Origin == "Top" then
+					SetProperty(Tracer, "From", ScreenTop)
+				elseif Origin == "Center" then
+					SetProperty(Tracer, "From", ScreenCenter)
+				else
+					SetProperty(Tracer, "From", ScreenBottom)
+				end
+				SetProperty(Tracer, "To", Visuals.EnemyESP_TracerTarget == "Torso" and Vector2.new(HeadScreenX, (HeadScreen.Y + BottomScreenY) * 0.5) or HeadScreen)
+				SetProperty(Tracer, "Visible", true)
+			else
+				SetProperty(Tracer, "Visible", false)
+			end
+		end)
+	else
+		for Player in next, Rendering_DrawingObjects do
+			ClearESP(Player)
+		end
+	end
 end
 
 RunService.PreRender:Connect(function()
@@ -3031,8 +3310,6 @@ RunService.PreRender:Connect(function()
 		local ShowFOV = Aiming.Aimbot_ShowFOV
 		if ShowFOV then
 			SetProperty(FOVCircle, "Radius", Aiming.Aimbot_FOVRadius)
-			SetProperty(FOVCircle, "Color", Aiming.Aimbot_FOVColor)
-			SetProperty(FOVCircle, "Transparency", Aiming.Aimbot_FOVOpacity)
 			SetProperty(FOVCircle, "Visible", true)
 		else
 			SetProperty(FOVCircle, "Visible", false)
@@ -3044,7 +3321,7 @@ RunService.PreRender:Connect(function()
 			local FOVRadius, IsWallCheckOff = ShowFOV and Aiming.Aimbot_FOVRadius or math.huge, not Aiming.Aimbot_WallCheck
 			local AimbotPart, CenterX, CenterY = Aiming.Aimbot_Part, ScreenCenter.X, ScreenCenter.Y
 
-			local function EvaluatePlayer(Player, Character)
+			local function CheckPlayer(Player, Character)
 				local Torso = Character.Torso
 				local CameraCFrame, TorsoPosition = Camera.CFrame, Torso.Position
 				local CameraPosition, LookVector = CameraCFrame.Position, CameraCFrame.LookVector
@@ -3065,7 +3342,8 @@ RunService.PreRender:Connect(function()
 					return
 				end
 
-				DeltaX, DeltaY, DeltaZ = TorsoPosition.X - LocalHeadPosition.X, TorsoPosition.Y - LocalHeadPosition.Y, TorsoPosition.Z - LocalHeadPosition.Z
+				local PartPosition = Part.Position
+				DeltaX, DeltaY, DeltaZ = PartPosition.X - LocalHeadPosition.X, PartPosition.Y - LocalHeadPosition.Y, PartPosition.Z - LocalHeadPosition.Z
 				local Score = Distance + math.sqrt(DeltaX * DeltaX + DeltaY * DeltaY + DeltaZ * DeltaZ) * 0.15
 				if Score < ClosestScore then
 					ClosestScore = Score
@@ -3077,14 +3355,14 @@ RunService.PreRender:Connect(function()
 			end
 
 			local AimbotTargetEntry = AimbotTarget and GetPlayerEntry(AimbotTarget)
-			if AimbotTargetEntry and AimbotTargetEntry._alive then
-				EvaluatePlayer(AimbotTarget, AimbotTargetEntry._thirdPersonObject._characterModelHash)
+			if AimbotTargetEntry and AimbotTargetEntry._alive and Aiming.Aimbot_Type ~= "Silent" then
+				CheckPlayer(AimbotTarget, AimbotTargetEntry._thirdPersonObject._characterModelHash)
 			end
 
 			if not Target then
 				OperateOnAllEntries(function(Player, Entry)
 					if Entry._isEnemy and Entry._alive then
-						EvaluatePlayer(Player, Entry._thirdPersonObject._characterModelHash)
+						CheckPlayer(Player, Entry._thirdPersonObject._characterModelHash)
 					end
 				end)
 			end
@@ -3123,30 +3401,7 @@ RunService.PreRender:Connect(function()
 		SetProperty(FOVCircle, "Visible", false)
 	end
 
-	if Visuals.EnemyESP_MasterEnabled then
-		local SkipFrame = false
-		if Settings.Advanced_ESPFramerateCap then
-			if Now - LastESPUpdateTime < 1/Settings.Advanced_ESPFPSCapValue then
-				SkipFrame = true
-			end
-		end
-
-		if not SkipFrame then
-			LastESPUpdateTime = Now
-			local GlobalOpacity = Visuals.EnemyESP_MasterOpacity * 0.01
-			OperateOnAllEntries(function(Player, Entry)
-				if not Entry._isEnemy or not Entry._alive then
-					return ClearESP(Player)
-				end
-				local Character = Entry._thirdPersonObject._characterModelHash
-				UpdateESP(LocalHeadPosition, Player, Entry, Character.Head, Character.Torso, Character["Left Arm"], Character["Right Arm"], Character["Left Leg"], Character["Right Leg"], GlobalOpacity)
-			end)
-		end
-	else
-		for Player in next, Rendering_DrawingObjects do
-			ClearESP(Player)
-		end
-	end
+	UpdateESP(LocalHeadPosition)
 
 	if Aiming.Aimbot_TargetTracer and IsAimbotLocking and AimbotTargetPart then
 		local Barrel = GetActiveWeapon()
@@ -3163,18 +3418,9 @@ RunService.PreRender:Connect(function()
 		end
 		local Screen, OnScreen = WorldToViewportPoint(AimbotTargetPart.Position)
 		SetProperty(TargetTracer, "To", OnScreen and Screen or ScreenCenter)
-		SetProperty(TargetTracer, "Color", Aiming.Aimbot_TargetTracerColor)
 		SetProperty(TargetTracer, "Visible", true)
 	else
 		SetProperty(TargetTracer, "Visible", false)
-	end
-
-	if Aiming.Aimbot_AutoFire and IsAimbotLocking and AimbotTarget and (Aiming.Aimbot_WallCheck and IsAimbotTargetVisible) then
-		IsAutoFiring = not IsAutoFiring
-		task.spawn(VirtualInputManager.SendMouseButtonEvent, VirtualInputManager, 0, 0, 0, IsAutoFiring, game, 1)
-	elseif IsAutoFiring then
-		IsAutoFiring = false
-		task.spawn(VirtualInputManager.SendMouseButtonEvent, VirtualInputManager, 0, 0, 0, false, game, 1)
 	end
 
 	if Visuals.Combat_GrenadeTrajectory and IsSpawned then
@@ -3189,7 +3435,7 @@ RunService.PreRender:Connect(function()
 
 				local TargetPosition = ActiveWeapon._mainPart
 				TargetPosition = TargetPosition and TargetPosition.Position or LocalPosition
-				
+
 				local StartHit = workspace:Raycast(LocalPosition, TargetPosition - LocalPosition, GrenadeRaycastParams)
 				local Position = StartHit and (StartHit.Position + StartHit.Normal * 0.01) or TargetPosition
 
@@ -3330,6 +3576,30 @@ RunService.PreRender:Connect(function()
 
 	GrenadeTrajectory2DMarker.Visible = false
 	GrenadeTrajectory3DMarker.Visible = false
+
+	local IsTargetPenetrable = false
+	if Aiming.Aimbot_AutoWall and AimbotTargetPart then
+		local Weapon = GetActiveWeapon()
+		if Weapon and Weapon:getWeaponType() == "Firearm" then
+			local WeaponData = Weapon._weaponData
+			local PenetrationDepth = WeaponData.penetrationdepth
+			local BulletSpeed = WeaponData.bulletspeed
+			if PenetrationDepth and BulletSpeed then
+				local Origin = GetLocalPosition()
+				local BulletAcceleration = PublicSettings.bulletAcceleration
+				local Velocity = GetBulletVelocity(Origin, AimbotTargetPart.Position, BulletSpeed, BulletAcceleration, BulletAcceleration:Dot(BulletAcceleration))
+				IsTargetPenetrable = Velocity and BulletCheck(Origin, AimbotTargetPart.Position, Velocity, BulletAcceleration, PenetrationDepth) or false
+			end
+		end
+	end
+
+	if Aiming.Aimbot_Type == "Silent" and Aiming.Aimbot_AutoFire and IsAimbotLocking and AimbotTarget and ((Aiming.Aimbot_AutoWall and AimbotTargetPart and IsTargetPenetrable) or (not Aiming.Aimbot_AutoWall and IsAimbotTargetVisible)) then
+		IsAutoFiring = not IsAutoFiring
+		task.spawn(VirtualInputManager.SendMouseButtonEvent, VirtualInputManager, 0, 0, 0, IsAutoFiring, game, 1)
+	elseif IsAutoFiring then
+		IsAutoFiring = false
+		task.spawn(VirtualInputManager.SendMouseButtonEvent, VirtualInputManager, 0, 0, 0, false, game, 1)
+	end
 end)
 
 Library:Toggle()
