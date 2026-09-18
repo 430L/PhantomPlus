@@ -59,7 +59,7 @@ elseif not ns__require then
 	return nil
 end
 
-return {Players = Players, LocalPlayer = LocalPlayer, Method = Method, ExecutorName = ExecutorName, GetModule = function(Module)
+return {Players = Players, LocalPlayer = LocalPlayer, Method = Method, ExecutorName = ExecutorName, __get = function(Module)
 	local function __internal()
 		local Success, Result = pcall(ns__require, Module)
 		if Success then
