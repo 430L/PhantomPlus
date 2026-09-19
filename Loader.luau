@@ -1,14 +1,16 @@
 --[[
-    PhantomWare | Loader
-    This project is open-source and intended for learning and personal use.
+    ███████████  █████                            █████                             █████   ███   █████
+    ▒▒███▒▒▒▒▒███▒▒███                            ▒▒███                             ▒▒███   ▒███  ▒▒███
+    ▒███    ▒███ ▒███████    ██████   ████████   ███████    ██████  █████████████   ▒███   ▒███   ▒███   ██████   ████████   ██████
+    ▒██████████  ▒███▒▒███  ▒▒▒▒▒███ ▒▒███▒▒███ ▒▒▒███▒    ███▒▒███▒▒███▒▒███▒▒███  ▒███   ▒███   ▒███  ▒▒▒▒▒███ ▒▒███▒▒███ ███▒▒███
+    ▒███▒▒▒▒▒▒   ▒███ ▒███   ███████  ▒███ ▒███   ▒███    ▒███ ▒███ ▒███ ▒███ ▒███  ▒▒███  █████  ███    ███████  ▒███ ▒▒▒ ▒███████
+    ▒███         ▒███ ▒███  ███▒▒███  ▒███ ▒███   ▒███ ███▒███ ▒███ ▒███ ▒███ ▒███   ▒▒▒█████▒█████▒    ███▒▒███  ▒███     ▒███▒▒▒
+    █████        ████ █████▒▒████████ ████ █████  ▒▒█████ ▒▒██████  █████▒███ █████    ▒▒███ ▒▒███     ▒▒████████ █████    ▒▒██████
+    ▒▒▒▒▒        ▒▒▒▒ ▒▒▒▒▒  ▒▒▒▒▒▒▒▒ ▒▒▒▒ ▒▒▒▒▒    ▒▒▒▒▒   ▒▒▒▒▒▒  ▒▒▒▒▒ ▒▒▒ ▒▒▒▒▒      ▒▒▒   ▒▒▒       ▒▒▒▒▒▒▒▒ ▒▒▒▒▒      ▒▒▒▒▒▒
 
-    Support:
-    If you encounter issues, open a ticket in the Discord server.
-    You may also contact me (@nikoleto._) via Discord for questions about the code.
-
-    -- Made by Nikoleto Scripts
+    -- Made by Nikoleto Scripts, if you encounter issues, open a ticket in the Discord server.
     GitHub: https://github.com/nikoladhima
-    Discord: https://discord.gg/DwRT2nH93D
+    Discord: https://discord.gg/DwRT2nH93D / @nikoleto._
 ]]
 
 repeat task.wait(0.25) until game:IsLoaded()
@@ -108,5 +110,20 @@ if QueueOnTeleport then
         loadstring(game:HttpGet("https://raw.githubusercontent.com/nikoladhima/PhantomWare/refs/heads/main/Loader.luau"))()
     ]])
 end
-task.wait(1)
-game:GetService("TeleportService"):Teleport(game.PlaceId)
+
+task.delay(0.465, function()
+    local TeleportService = game:GetService("TeleportService")
+    if pcall(TeleportService.Teleport, TeleportService, game.PlaceId) then
+        return
+    end
+
+    for _ = 1, 4 do
+        if pcall(TeleportService.Teleport, TeleportService, game.PlaceId) then
+            break
+        end
+        task.wait(0.5)
+    end
+
+    LocalPlayer:Kick("Failed to teleport, follow these steps to manually fix the issue:\n1. Click the Leave button which will take you to the Desktop App.\n2. Join Phantom Forces again while you are still inside the Desktop App.\n3. Wait until you load and execute PhantomWare again.\nNote: If this issue persists, please open a ticket in the Discord server.\ndiscord.gg/DwRT2nH93D")
+    pcall(setclipboard, "discord.gg/DwRT2nH93D")
+end)
