@@ -9,7 +9,7 @@ local Module = loadstring(game:HttpGet("https://raw.githubusercontent.com/nikola
 
 local clonerefFunction = cloneref or clone_ref or clonereference or clone_reference
 local ns__cloneref = function(Object)
-	if not clonerefFunction then
+	if clonerefFunction then
 		local Success, Result = pcall(clonerefFunction, Object)
 		return Success and Result or Object
 	end
