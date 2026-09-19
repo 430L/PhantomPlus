@@ -11,7 +11,7 @@ local clonerefFunction = cloneref or clone_ref or clonereference or clone_refere
 local ns__cloneref = function(Object)
 	if not clonerefFunction then
 		local Success, Result = pcall(clonerefFunction, Object)
-		return Success and Result or Object 
+		return Success and Result or Object
 	end
 	return Object
 end
@@ -1857,7 +1857,7 @@ function ESPModule:Clear(Player)
 	end
 end
 
-local Library = loadfile("pw-libyes.txt")() --loadstring(game:HttpGet("https://raw.githubusercontent.com/nikoladhima/PhantomWare/refs/heads/main/core/Library.luau"))()
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/nikoladhima/PhantomWare/refs/heads/main/core/Library.luau"))()
 local Window = Library:CreateWindow({Title = "PhantomWare | discord.gg/DwRT2nH93D" .. (Module.ExecutorName and (" | " .. Module.ExecutorName) or ""), TabPadding = 8, MenuFadeTime = 0.2}, 1)
 local Toggles = Library.Toggles
 local Options = Library.Options
@@ -2843,7 +2843,7 @@ local function BuildMiscellaneousTab()
 			break
 		end
 	end})
-	Miscellaneous_ClientSessionUnlocks:AddLabel("Information [MUST READ | HOVER]", false, "As of 9/19/2026, these Unlocks are undetected, use at your own risk.\n1. These Unlocks only last for the current session and are only visible to you, not others.\n2. Dropping Unlocked weapons makes it lose any Unlocked Add-Ons meaning you'd need to respawn to have the Add-Ons again.\n3. Dropping an Unlocked Knife in a match will make it dissapear.")
+	Miscellaneous_ClientSessionUnlocks:AddLabel("Information [MUST READ | HOVER]", false, "As of 9/19/2026, these Unlocks are undetected, use at your own risk.\n1. These Unlocks only last for the current session and are only visible to you, not others.\n2. Dropping Unlocked weapons makes it lose any Unlocked Add-Ons meaning you'll need to respawn to have the Add-Ons again.\n3. Dropping an Unlocked Knife in a match will make it dissapear.")
 
 	local Miscellaneous_Extras = Tabs.Miscellaneous:AddRightGroupbox("Extras")
 	Miscellaneous_Extras:AddButton({Text = "Break All Windows", Func = BreakAllWindows})
