@@ -1,5 +1,5 @@
 --[[
-    This is a modified version of Linoria Library, credits to Linoria.
+    This is a modified version of Linoria Library, credits to the dev(s) of Linoria.
 ]]
 
 local clonerefFunction = cloneref or clone_ref or clonereference or clone_reference
@@ -15,7 +15,6 @@ local TweenService = game:GetService("TweenService")
 local TextService = game:GetService("TextService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
-local CoreGui = ns__cloneref(game:GetService("CoreGui"))
 local Players = game:GetService("Players")
 local Teams = game:GetService("Teams")
 
@@ -25,7 +24,7 @@ local Mouse = ns__cloneref(LocalPlayer:GetMouse())
 
 local ScreenGui = ns__cloneref(Instance.new("ScreenGui"))
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-ScreenGui.Parent = CoreGui
+ScreenGui.Parent = ns__cloneref(game:GetService("CoreGui"))
 
 local Toggles = {}
 local Options = {}
@@ -741,13 +740,17 @@ do
 
 
             ContextMenu:AddOption('Copy HEX', function()
-                pcall(setclipboard, ColorPicker.Value:ToHex())
-                Library:Notify('Copied hex code to clipboard!', 2)
+                if pcall(setclipboard, ColorPicker.Value:ToHex()) then
+                    return Library:Notify('Copied hex code to clipboard!', 2)
+                end
+                Library:Notify('Failed to copy hex code to clipboard!', 2)
             end)
 
             ContextMenu:AddOption('Copy RGB', function()
-                pcall(setclipboard, table.concat({math.floor(ColorPicker.Value.R * 255), math.floor(ColorPicker.Value.G * 255), math.floor(ColorPicker.Value.B * 255) }, ', '))
-                Library:Notify('Copied RGB values to clipboard!', 2)
+                if pcall(setclipboard, table.concat({math.floor(ColorPicker.Value.R * 255), math.floor(ColorPicker.Value.G * 255), math.floor(ColorPicker.Value.B * 255) }, ', ')) then
+                    return Library:Notify('Copied RGB values to clipboard!', 2)
+                end
+                Library:Notify('Failed to copy RGB values to clipboard!', 2)
             end)
 
         end
@@ -938,10 +941,10 @@ do
             end
         end)
 
+        Options[Index] = ColorPicker
         ColorPicker:Display()
         ColorPicker.DisplayFrame = DisplayFrame
 
-        Options[Index] = ColorPicker
         return ColorPicker
     end
 
@@ -2841,9 +2844,7 @@ do
             if type(DecodedValue) == "table" and DecodedValue.Type == "Color3" and DecodedValue.Hex then
                 return Color3.fromHex(DecodedValue.Hex)
             elseif type(CurrentValue) == "table" and type(DecodedValue) == "table" then
-                if #DecodedValue > 0 then
-                    table.clear(CurrentValue)
-                end
+                table.clear(CurrentValue)
                 for SubKey, SubValue in next, DecodedValue do
                     CurrentValue[SubKey] = DeserializeRecursive(CurrentValue[SubKey], SubValue)
                 end
@@ -2893,9 +2894,9 @@ do
                                 Toggles[Setting]:SetValue(Configuration[Setting])
                             elseif Options[Setting] then
                                 if Options[Setting].Type == "ColorPicker" then
-                                    Options[Setting]:SetValueRGB(Configuration[Setting])
+                                    Options[Setting]:SetValueRGB(Configuration[Setting], Data[Setting .. "Transparency"])
                                 elseif Options[Setting].Type == "KeyPicker" then
-                                    Options[Setting]:SetValue({Configuration[Setting], Configuration[Setting .. "Mode"] or "Toggle"})
+                                    Options[Setting]:SetValue({Configuration[Setting], Data[Setting .. "Mode"] or "Toggle"})
                                 else
                                     Options[Setting]:SetValue(Configuration[Setting])
                                 end
@@ -2936,7 +2937,7 @@ do
             end
         })
 
-        self:AddButton({Text = "Save", Func = function()
+        local function SaveConfigurationProfile()
             local Name = ConfigurationManager.CurrentConfigurationProfile
             if Name == "" then
                 return
@@ -2952,6 +2953,16 @@ do
                 end
             end
 
+            for Index, Option in next, Library.Options do
+                if type(Option) == "table" and type(Option.Type) == "string" then
+                    if Option.Type == "KeyPicker" and type(Option.Mode) == "string" then
+                        Data[Index .. "Mode"] = Option.Mode
+                    elseif Option.Type == "ColorPicker" then
+                        Data[Index .. "Transparency"] = Option.Transparency or 0
+                    end
+                end
+            end
+
             if not isfolder(ConfigurationFolder) then
                 makefolder(ConfigurationFolder)
             end
@@ -2961,6 +2972,10 @@ do
 
             Options.ConfigurationDropdown:SetValues(GetConfigurations())
             Options.ConfigurationDropdown:SetValue(Name)
+        end
+
+        self:AddButton({Text = "Save", Func = function()
+            SaveConfigurationProfile()
         end}):AddButton({Text = "Load", Func = function()
             local Name = ConfigurationManager.CurrentConfigurationProfile
             if Name == "" then
@@ -3018,16 +3033,16 @@ do
 
         ConfigurationManager.Buttons.RemoveAutoload.Outer.Visible = false
 
-        if isfile(AutoloadFile) then
-            local Name = readfile(AutoloadFile)
-            if Name and Name ~= "" then
-                LoadConfigurationProfile(Name)
-                Library:Notify("Profile '" .. Name .. "' was loaded successfully.", 3)
-                Options.ConfigurationDropdown:SetValue(Name)
+        return function()
+            if isfile(AutoloadFile) then
+                local Name = readfile(AutoloadFile)
+                if Name and Name ~= "" then
+                    LoadConfigurationProfile(Name)
+                    Library:Notify("Profile '" .. Name .. "' was loaded successfully.", 3)
+                    Options.ConfigurationDropdown:SetValue(Name)
+                end
             end
         end
-
-        return ConfigurationManager
     end
 
     BaseGroupbox.__index = Funcs
