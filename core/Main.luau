@@ -1845,7 +1845,7 @@ function ESPModule:Clear(Player)
 end
 
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/430L/PhantomPlus/refs/heads/main/core/Library.luau"))()
-local Window = Library:CreateWindow({Title = "PhantomPlus | discord.gg/DwRT2nH93D" .. (Module.ExecutorName and (" | " .. Module.ExecutorName) or ""), TabPadding = 8, MenuFadeTime = 0.2}, 1)
+local Window = Library:CreateWindow({Title = "PhantomWare | discord.gg/DwRT2nH93D" .. (Module.ExecutorName and (" | " .. Module.ExecutorName) or ""), TabPadding = 8, MenuFadeTime = 0.2}, 1)
 local Toggles = Library.Toggles
 local Options = Library.Options
 
@@ -1869,12 +1869,8 @@ local function BuildAimingTab()
 
 	Aiming_Aimbot:AddToggle("Aimbot_Enabled", {Text = "Aimbot", Default = Aiming.Aimbot_Enabled, Callback = function(Value)
 		Aiming.Aimbot_Enabled = Value
-	end}):AddKeyPicker("Aimbot_Keybind", {Default = Aiming.Aimbot_Keybind, Mode = "Toggle", Text = "Aiming Keybind", SyncToggleState = true, ChangedCallback = function(Keybind)
+	end}):AddKeyPicker("Aimbot_Keybind", {Default = Aiming.Aimbot_Keybind, Mode = "Hold", Text = "Aiming Keybind", ChangedCallback = function(Keybind)
 		Aiming.Aimbot_Keybind = Keybind
-	end, Callback = function(Value)
-		if type(Value) == "boolean" then
-			Toggles.Aimbot_Enabled:SetValue(Value)
-		end
 	end})
 
 	local AimbotDependencyBox = Aiming_Aimbot:AddDependencyBox():SetupDependencies({{Toggles.Aimbot_Enabled, true}})
@@ -3324,7 +3320,8 @@ local function UpdateAimbot(LocalHeadPosition)
 		end
 
 		local IsLocking = false
-		if IsSpawned then
+		local IsAimkeyActive = Aiming.Aimbot_Type == "Silent" or (Options.Aimbot_Keybind and Options.Aimbot_Keybind:GetState())
+		if IsSpawned and IsAimkeyActive then
 			local TargetPart, Target, IsTargetVisible, TargetScreen, ClosestScore = nil, nil, false, nil, math.huge
 			local FOVRadius, IsWallCheckOff = ShowFOV and Aiming.Aimbot_FOVRadius or math.huge, not Aiming.Aimbot_WallCheck
 			local AimbotPart, FOVOrigin = Aiming.Aimbot_Part, ShowFOV and GetFOVOrigin() or ScreenCenter
