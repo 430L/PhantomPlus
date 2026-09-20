@@ -1,11 +1,11 @@
-if getgenv().ns__PhantomWare__Executed then
+if getgenv().ns__PhantomPlus__Executed then
 	return
 end
 
-getgenv().ns__PhantomWare__Executed = true
+getgenv().ns__PhantomPlus__Executed = true
 pcall(clearteleportqueue or clear_teleport_queue or clearqueueonteleport)
 
-local Module = loadstring(game:HttpGet("https://raw.githubusercontent.com/nikoladhima/PhantomWare/refs/heads/main/core/Module.luau"))()
+local Module = loadstring(game:HttpGet("https://raw.githubusercontent.com/430L/PhantomPlus/refs/heads/main/core/Module.luau"))()
 
 local clonerefFunction = cloneref or clone_ref or clonereference or clone_reference
 local ns__cloneref = function(Object)
@@ -101,7 +101,6 @@ end
 
 local AimbotTarget = nil
 local AimbotTargetPart = nil
-local IsAimbotInputActive = false
 local IsAimbotLocking = false
 local IsAimbotTargetVisible = false
 
@@ -130,7 +129,7 @@ local Aiming = {
 
 	RageBot_Enabled = false,
 	RageBot_Keybind = "None",
-	RageBot_Part = "Priority",
+	RageBot_Part = "Head",
 	RageBot_WallPenetrationDetection = true,
 	RageBot_MultiTarget = false,
 	RageBot_HitScanning = true,
@@ -548,18 +547,6 @@ local function GetTrajectory(Origin, Acceleration, Target, Speed, Velocity)
 		return Direction * Speed
 	end
 end
-
---[[
-	-- ignore / old
-	local function GetBulletVelocity(Origin, Target, Speed)
-		local Weapon = GetActiveWeapon()
-		local BulletAccel = Weapon and Weapon:getWeaponStat("bulletaccel") or 0
-		local Direction = BallisticsModule:Solve(Origin, Target, Speed, Vector3.zero, Acceleration, BulletAccel)
-		if Direction then
-			return Direction * Speed
-		end
-	end
-]]
 
 local function GetBulletVelocity(Origin, Target, Speed)
 	local Gravity = -BulletAcceleration
@@ -1496,7 +1483,7 @@ local SoundOptions = {
 }
 
 local CustomSounds = {
-	["None"] = "", ["Osu"] = "rbxassetid://7172607676", ["MLG"] = "rbxassetid://109817519733426", ["Ouch"] = "rbxassetid://136844926219636",
+	["None"] = "", ["Osu"] = "rbxassetid://7172607676", ["Pop"] = "rbxassetid://9125402735", ["MLG"] = "rbxassetid://109817519733426", ["Ouch"] = "rbxassetid://136844926219636",
 	["Fire"] = "rbxassetid://130412184952886", ["Bonk"] = "rbxassetid://5682262154", ["Bell"] = "rbxassetid://131573697", ["Rust"] = "rbxassetid://5043539486",
 	["Metal"] = "rbxassetid://8917041751", ["Skeet"] = "rbxassetid://83717596220569", ["Quack"] = "rbxassetid://6435400690", ["Katana"] = "rbxassetid://7122613461",
 	["Neverlose"] = "rbxassetid://18391691942", ["Undertale"] = "rbxassetid://1471213022", ["Jet Set Radio"] = "rbxassetid://97113622160405",
@@ -1576,7 +1563,7 @@ ns__hookfunction(Module.__get("BulletObject"), "new", function(Original, BulletD
 		return Original(BulletData)
 	end
 
-	if IsAimbotInputActive and Aiming.Aimbot_Type == "Silent" then
+	if Aiming.Aimbot_Enabled and Aiming.Aimbot_Type == "Silent" then
 		local Speed = BulletData.velocity.Magnitude
 		local Direction, Target, Entry, ShotTime = SilentAimbotModule:Solve(BulletData.position, BulletData.acceleration, Speed)
 		if Direction and Target and Entry then
@@ -1857,8 +1844,8 @@ function ESPModule:Clear(Player)
 	end
 end
 
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/nikoladhima/PhantomWare/refs/heads/main/core/Library.luau"))()
-local Window = Library:CreateWindow({Title = "PhantomWare | discord.gg/DwRT2nH93D" .. (Module.ExecutorName and (" | " .. Module.ExecutorName) or ""), TabPadding = 8, MenuFadeTime = 0.2}, 1)
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/430L/PhantomPlus/refs/heads/main/core/Library.luau"))()
+local Window = Library:CreateWindow({Title = "PhantomPlus | discord.gg/DwRT2nH93D" .. (Module.ExecutorName and (" | " .. Module.ExecutorName) or ""), TabPadding = 8, MenuFadeTime = 0.2}, 1)
 local Toggles = Library.Toggles
 local Options = Library.Options
 
@@ -1881,9 +1868,7 @@ local function BuildAimingTab()
 	local Aiming_Aimbot = Tabs.Aiming:AddLeftGroupbox("Aimbot")
 
 	Aiming_Aimbot:AddToggle("Aimbot_Enabled", {Text = "Aimbot", Default = Aiming.Aimbot_Enabled, Callback = function(Value)
-		UpdateTable(Aiming, "Aimbot_Enabled", Value, function(Value2)
-			IsAimbotInputActive = Value2
-		end)
+		Aiming.Aimbot_Enabled = Value
 	end}):AddKeyPicker("Aimbot_Keybind", {Default = Aiming.Aimbot_Keybind, Mode = "Toggle", Text = "Aiming Keybind", SyncToggleState = true, ChangedCallback = function(Keybind)
 		Aiming.Aimbot_Keybind = Keybind
 	end, Callback = function(Value)
@@ -2899,6 +2884,7 @@ BuildSettingsTab()
 
 Module.Players.PlayerRemoving:Connect(function(Player)
 	ESPModule:Clear(Player)
+	MovementCache[Player] = nil
 end)
 
 local FakeReplicationObject = nil
@@ -3338,7 +3324,7 @@ local function UpdateAimbot(LocalHeadPosition)
 		end
 
 		local IsLocking = false
-		if IsSpawned and IsAimbotInputActive then
+		if IsSpawned then
 			local TargetPart, Target, IsTargetVisible, TargetScreen, ClosestScore = nil, nil, false, nil, math.huge
 			local FOVRadius, IsWallCheckOff = ShowFOV and Aiming.Aimbot_FOVRadius or math.huge, not Aiming.Aimbot_WallCheck
 			local AimbotPart, FOVOrigin = Aiming.Aimbot_Part, ShowFOV and GetFOVOrigin() or ScreenCenter
@@ -3868,7 +3854,6 @@ function ThirdPersonModule:Update(DeltaTime)
 	self.LastPosition = Position
 end
 
-local TicketCounter = 0
 function RageBotModule:Update()
 	local Now = os.clock()
 	local Weapon = Aiming.RageBot_Enabled and not RoundSystemClient.roundLock and IsSpawned and GetActiveWeapon()
@@ -3992,11 +3977,11 @@ function RageBotModule:Update()
 				local Direction, Bullets = Velocity.Unit, table.create(PelletCount)
 
 				if IsSinglePellet then
-					Bullets[1] = {Direction, TicketCounter + TicketAddition}
+					Bullets[1] = {Direction, TicketAddition}
 					TicketAddition += 1
 				else
 					for Index = 1, PelletCount do
-						Bullets[Index] = {Direction, TicketCounter + TicketAddition}
+						Bullets[Index] = {Direction, TicketAddition}
 						TicketAddition += 1
 					end
 				end
@@ -4040,11 +4025,11 @@ function RageBotModule:Update()
 					PlayGameSound("1PsniperEcho", 1)
 				end
 
-				local HitSound = Miscellaneous.SoundOverride_HitSound
-				if HitSound == "None" then
+				local ShootSound = Miscellaneous.SoundOverride_ShootSound
+				if ShootSound == "None" then
 					PlaySoundId(WeaponData.firesoundid, 2, WeaponData.firevolume, WeaponData.firepitch, Barrel, nil, 0, 0.05)
 				else
-					PlaySoundId(CustomSounds[HitSound], 2, WeaponData.firevolume, WeaponData.firepitch, Barrel, nil, 0, 0.05)
+					PlaySoundId(CustomSounds[ShootSound], 2, WeaponData.firevolume, WeaponData.firepitch, Barrel, nil, 0, 0.05)
 				end
 
 				if ShouldCreateBulletTracer then
@@ -4313,7 +4298,7 @@ NetworkClient.send = function(self, Packet, ...)
 			Bullets[Index][2] += TicketAddition
 		end
 
-		if IsAimbotInputActive and Aiming.Aimbot_Type == "Silent" then
+		if Aiming.Aimbot_Enabled and Aiming.Aimbot_Type == "Silent" then
 			local Now = os.clock()
 			if LastSilent.Target and (Now - LastSilent.Frame < 0.1) then
 				local Direction = LastSilent.Velocity.Unit

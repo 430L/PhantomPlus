@@ -1,4 +1,4 @@
-## PhantomWare
+## PhantomPlus
 
 > [!IMPORTANT]
 > If you encounter bugs or need support, join the Discord server: https://discord.gg/DwRT2nH93D
@@ -11,6 +11,6 @@
 
 ## 🔌Shortened Script
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/nikoladhima/PhantomWare/main/Loader.luau"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/430L/PhantomPlus/main/Loader.luau"))()
 ```
 <br/>
