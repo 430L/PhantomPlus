@@ -3320,7 +3320,8 @@ local function UpdateAimbot(LocalHeadPosition)
 		end
 
 		local IsLocking = false
-		local IsAimkeyActive = Aiming.Aimbot_Type == "Silent" or (Options.Aimbot_Keybind and Options.Aimbot_Keybind:GetState())
+		local AimkeyPicker = Options.Aimbot_Keybind
+		local IsAimkeyActive = Aiming.Aimbot_Type == "Silent" or not AimkeyPicker or AimkeyPicker.Value == "None" or AimkeyPicker:GetState()
 		if IsSpawned and IsAimkeyActive then
 			local TargetPart, Target, IsTargetVisible, TargetScreen, ClosestScore = nil, nil, false, nil, math.huge
 			local FOVRadius, IsWallCheckOff = ShowFOV and Aiming.Aimbot_FOVRadius or math.huge, not Aiming.Aimbot_WallCheck
