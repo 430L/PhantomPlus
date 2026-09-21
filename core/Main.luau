@@ -641,7 +641,7 @@ end
 local function GetFOVOrigin()
 	if Aiming.Aimbot_FOVFollowRecoil then
 		local Weapon = GetActiveWeapon()
-		if Weapon and not Weapon._aiming then
+		if Weapon then
 			local Barrel = Weapon._barrelPart
 			if Barrel then
 				local Screen, OnScreen = WorldToViewportPoint(Barrel.CFrame * Vector3.new(0, 0, -100))
@@ -1219,6 +1219,10 @@ ns__hookfunction(FirearmObject, "getActiveAimStat", function(Original, self, Sta
 end)
 
 ns__hookfunction(Module.__get("RecoilSprings"), "applyImpulse", function(Original, self, Offset, Scale, ...)
+	if IsAimbotLocking and (Aiming.Aimbot_Type == "Camera" or Aiming.Aimbot_Type == "Mouse") then
+		return
+	end
+
 	local Value = Miscellaneous.WeaponMods_RecoilAdjustment * 0.01
 	if Value == 0 then
 		return
@@ -3475,7 +3479,7 @@ local function UpdateAimbot(LocalHeadPosition)
 
 				DeltaX, DeltaY = Screen.X - CenterX, Screen.Y - CenterY
 				local Distance = math.sqrt(DeltaX * DeltaX + DeltaY * DeltaY)
-				if Distance > FOVRadius then
+				if Distance > FOVRadius and Player ~= AimbotTarget then
 					return
 				end
 
