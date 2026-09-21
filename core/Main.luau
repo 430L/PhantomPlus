@@ -1869,7 +1869,7 @@ local function BuildAimingTab()
 
 	Aiming_Aimbot:AddToggle("Aimbot_Enabled", {Text = "Aimbot", Default = Aiming.Aimbot_Enabled, Callback = function(Value)
 		Aiming.Aimbot_Enabled = Value
-	end}):AddKeyPicker("Aimbot_Keybind", {Default = Aiming.Aimbot_Keybind, Mode = "Hold", Text = "Aiming Keybind", ChangedCallback = function(Keybind)
+	end}):AddKeyPicker("Aimbot_Keybind", {Default = Aiming.Aimbot_Keybind, Mode = "Hold", Modes = {"Hold"}, Text = "Aiming Keybind", ChangedCallback = function(Keybind)
 		Aiming.Aimbot_Keybind = Keybind
 	end})
 
