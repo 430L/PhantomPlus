@@ -110,6 +110,9 @@ local Aiming = {
 	Aimbot_Type = "None",
 	Aimbot_Part = "Head",
 	Aimbot_Smoothness = 3,
+	Aimbot_SmoothingMode = "Linear",
+	Aimbot_TargetStickiness = 30,
+	Aimbot_Prediction = false,
 	Aimbot_AutoFire = false,
 	Aimbot_AutoWall = false,
 	Aimbot_AutoDelay = 0,
@@ -124,6 +127,7 @@ local Aiming = {
 	Aimbot_TargetTracer = true,
 	Aimbot_TargetTracerColor = Color3.fromRGB(255, 255, 255),
 	Aimbot_TargetTracerOpacity = 0.5,
+	Aimbot_DynamicFOV = false,
 	Aimbot_GrenadeRedirect = false,
 	Aimbot_FuseAssist = false,
 
@@ -138,7 +142,8 @@ local Aiming = {
 	RageBot_FireScanning = true,
 	RageBot_FireScanningMode = "Cardinal",
 	RageBot_FireScanningRadius = 3,
-	RageBot_FireScanningCount = 8
+	RageBot_FireScanningCount = 8,
+	RageBot_Prediction = true
 }
 
 -- Aimkey input tracking (callback-driven, avoids GetState() in render loop)
@@ -367,7 +372,8 @@ local Miscellaneous = {
 local Settings = {
 	Advanced_MultiPointEnabled = true,
 	Advanced_MultiPointLayers = 2,
-	Advanced_MultiPointScale = 2
+	Advanced_MultiPointScale = 2,
+	Debug_PassthroughACPackets = false
 }
 
 local LightingCache = {
@@ -1343,9 +1349,22 @@ function SilentAimbotModule:Solve(Origin, Acceleration, Speed)
 		return
 	end
 
-	local Current, Old, Velocity = Cache[1], Cache[15], nil
-	if Current and Old and (Current.Time - Old.Time) > 0.01 then
-		Velocity = (Current.Position - Old.Position) / (Current.Time - Old.Time)
+	local Velocity = nil
+	local CacheSize = #Cache
+	if CacheSize >= 2 then
+		local TotalWeight, WeightedVelocity = 0, Vector3.zero
+		for i = 1, math.min(CacheSize - 1, 5) do
+			local Newer, Older = Cache[i], Cache[i + 1]
+			if Newer and Older and (Newer.Time - Older.Time) > 0.001 then
+				local Weight = 1 / i
+				local SampleVelocity = (Newer.Position - Older.Position) / (Newer.Time - Older.Time)
+				WeightedVelocity = WeightedVelocity + SampleVelocity * Weight
+				TotalWeight = TotalWeight + Weight
+			end
+		end
+		if TotalWeight > 0 then
+			Velocity = WeightedVelocity / TotalWeight
+		end
 	end
 
 	local Trajectory = GetTrajectory(Origin, Acceleration, Target, Speed, Velocity or Vector3.zero)
@@ -1934,9 +1953,27 @@ local function BuildAimingTab()
 		Aiming.Aimbot_Part = Value
 	end})
 
+	AimbotDependencyBox:AddDependencyBox():SetupDependencies({{Options.Aimbot_Type, {"Camera", "Mouse"}}}):AddDropdown("Aimbot_SmoothingMode", {
+		Text = "Smoothing Mode", Default = Aiming.Aimbot_SmoothingMode, Values = {"Linear", "Ease-Out"}, Callback = function(Value)
+			Aiming.Aimbot_SmoothingMode = Value
+		end
+	})
+
 	AimbotDependencyBox:AddDependencyBox():SetupDependencies({{Options.Aimbot_Type, {"Camera", "Mouse"}}}):AddSlider("Aimbot_Smoothness", {
-		Text = "Smoothness", Default = Aiming.Aimbot_Smoothness, Min = 1, Max = 10, Rounding = 0, Callback = function(Value)
+		Text = "Smoothness", Default = Aiming.Aimbot_Smoothness, Min = 1, Max = 20, Rounding = 1, Callback = function(Value)
 			Aiming.Aimbot_Smoothness = Value
+		end
+	})
+
+	AimbotDependencyBox:AddDependencyBox():SetupDependencies({{Options.Aimbot_Type, {"Camera", "Mouse"}}}):AddSlider("Aimbot_TargetStickiness", {
+		Text = "Target Stickiness", Default = Aiming.Aimbot_TargetStickiness, Min = 0, Max = 100, Rounding = 0, Callback = function(Value)
+			Aiming.Aimbot_TargetStickiness = Value
+		end
+	})
+
+	AimbotDependencyBox:AddDependencyBox():SetupDependencies({{Options.Aimbot_Type, {"Camera", "Mouse"}}}):AddToggle("Aimbot_Prediction", {
+		Text = "Movement Prediction", Default = Aiming.Aimbot_Prediction, Callback = function(Value)
+			Aiming.Aimbot_Prediction = Value
 		end
 	})
 
@@ -1996,6 +2033,12 @@ local function BuildAimingTab()
 		end
 	})
 
+	AimbotDependencyBox:AddDependencyBox():SetupDependencies({{Toggles.Aimbot_ShowFOV, true}}):AddToggle("Aimbot_DynamicFOV", {
+		Text = "Dynamic FOV Circle", Default = Aiming.Aimbot_DynamicFOV, Callback = function(Value)
+			Aiming.Aimbot_DynamicFOV = Value
+		end
+	})
+
 	AimbotDependencyBox:AddToggle("Aimbot_TargetTracer", {Text = "Target Tracer", Default = Aiming.Aimbot_TargetTracer, Callback = function(Value)
 		Aiming.Aimbot_TargetTracer = Value
 	end}):AddColorPicker("Aimbot_TargetTracerColor", {Default = Aiming.Aimbot_TargetTracerColor, Title = "Tracer Color", Transparency = Aiming.Aimbot_TargetTracerOpacity, Callback = function(Value)
@@ -2034,6 +2077,10 @@ local function BuildAimingTab()
 
 	RageBotDependencyBox:AddToggle("RageBot_MultiTarget", {Text = "Multi Target", Default = Aiming.RageBot_MultiTarget, Callback = function(Value)
 		Aiming.RageBot_MultiTarget = Value
+	end})
+
+	RageBotDependencyBox:AddToggle("RageBot_Prediction", {Text = "Movement Prediction", Default = Aiming.RageBot_Prediction, Callback = function(Value)
+		Aiming.RageBot_Prediction = Value
 	end})
 
 	RageBotDependencyBox:AddToggle("RageBot_HitScanning", {Text = "Hit Scanning", Default = Aiming.RageBot_HitScanning, Callback = function(Value)
@@ -2917,6 +2964,12 @@ local function BuildSettingsTab()
 		Settings.Advanced_MultiPointLayers = Value
 	end})
 
+	Settings_Advanced:AddToggle("Debug_PassthroughACPackets", {
+		Text = "Passthrough AC Packets", Default = Settings.Debug_PassthroughACPackets, Callback = function(Value)
+			Settings.Debug_PassthroughACPackets = Value
+		end
+	})
+
 	Settings_Advanced:AddButton({Text = "Server Hop", Func = function()
 		game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
 	end})
@@ -3363,7 +3416,15 @@ local function UpdateAimbot(LocalHeadPosition)
 	if Aiming.Aimbot_Enabled then
 		local ShowFOV = Aiming.Aimbot_ShowFOV
 		if ShowFOV then
-			SetProperty(FOVCircle, "Radius", Aiming.Aimbot_FOVRadius)
+			local DrawRadius = Aiming.Aimbot_FOVRadius
+			if Aiming.Aimbot_DynamicFOV then
+				local AngleDeg = DrawRadius / 10
+				local ViewportSize = Camera.ViewportSize
+				local HalfFOV = math.rad(Camera.FieldOfView / 2)
+				local FocalLength = (ViewportSize.Y / 2) / math.tan(HalfFOV)
+				DrawRadius = math.tan(math.rad(AngleDeg)) * FocalLength
+			end
+			SetProperty(FOVCircle, "Radius", DrawRadius)
 			SetProperty(FOVCircle, "Position", GetFOVOrigin())
 			SetProperty(FOVCircle, "Visible", true)
 		else
@@ -3374,7 +3435,22 @@ local function UpdateAimbot(LocalHeadPosition)
 		local IsAimkeyActive = Aiming.Aimbot_Type == "Silent" or (not AimkeyBoundCode and not AimkeyIsMB2) or IsAimkeyDown
 		if IsSpawned and IsAimkeyActive then
 			local TargetPart, Target, IsTargetVisible, TargetScreen, ClosestScore = nil, nil, false, nil, math.huge
-			local FOVRadius, IsWallCheckOff = ShowFOV and Aiming.Aimbot_FOVRadius or math.huge, not Aiming.Aimbot_WallCheck
+			local RawFOVRadius = Aiming.Aimbot_FOVRadius
+			local FOVRadius
+			if ShowFOV then
+				if Aiming.Aimbot_DynamicFOV then
+					local AngleDeg = RawFOVRadius / 10
+					local ViewportSize = Camera.ViewportSize
+					local HalfFOV = math.rad(Camera.FieldOfView / 2)
+					local FocalLength = (ViewportSize.Y / 2) / math.tan(HalfFOV)
+					FOVRadius = math.tan(math.rad(AngleDeg)) * FocalLength
+				else
+					FOVRadius = RawFOVRadius
+				end
+			else
+				FOVRadius = math.huge
+			end
+			local IsWallCheckOff = not Aiming.Aimbot_WallCheck
 			local AimbotPart, FOVOrigin = Aiming.Aimbot_Part, ShowFOV and GetFOVOrigin() or ScreenCenter
 			local CenterX, CenterY = FOVOrigin.X, FOVOrigin.Y
 
@@ -3406,6 +3482,9 @@ local function UpdateAimbot(LocalHeadPosition)
 				local PartPosition = Part.Position
 				DeltaX, DeltaY, DeltaZ = PartPosition.X - LocalHeadPosition.X, PartPosition.Y - LocalHeadPosition.Y, PartPosition.Z - LocalHeadPosition.Z
 				local Score = Distance + math.sqrt(DeltaX * DeltaX + DeltaY * DeltaY + DeltaZ * DeltaZ) * 0.15
+				if Player == AimbotTarget and Aiming.Aimbot_TargetStickiness > 0 then
+					Score = Score - Aiming.Aimbot_TargetStickiness
+				end
 				if Score < ClosestScore then
 					ClosestScore = Score
 					Target = Player
@@ -3423,37 +3502,61 @@ local function UpdateAimbot(LocalHeadPosition)
 				end
 			end
 
-			if not Target then
-				OperateOnAllEntries(function(Player, Entry)
-					if not Entry._alive or not Entry._isEnemy or not Entry._velspring.t then
-						return
-					end
+			OperateOnAllEntries(function(Player, Entry)
+				if Player == AimbotTarget then return end
+				if not Entry._alive or not Entry._isEnemy or not Entry._velspring.t then
+					return
+				end
 
-					local Character = GetCharacter(Entry)
-					if Character then
-						CheckPlayer(Player, Character)
-					end
-				end)
-			end
+				local Character = GetCharacter(Entry)
+				if Character then
+					CheckPlayer(Player, Character)
+				end
+			end)
 
 			AimbotTarget = Target
 			AimbotTargetPart = TargetPart
 			IsAimbotTargetVisible = IsTargetVisible
 
+			local AimPosition = AimbotTargetPart and AimbotTargetPart.Position
+			if TargetPart and Aiming.Aimbot_Prediction and AimbotTarget then
+				local PredCache = MovementCache[AimbotTarget]
+				if PredCache and #PredCache >= 2 then
+					local Newest, Previous = PredCache[1], PredCache[2]
+					if Newest and Previous and (Newest.Time - Previous.Time) > 0.001 then
+						local Vel = (Newest.Position - Previous.Position) / (Newest.Time - Previous.Time)
+						AimPosition = AimbotTargetPart.Position + Vel * (2 / 60)
+					end
+				end
+			end
+
 			if TargetPart then
 				if Aiming.Aimbot_Type == "Mouse" and not Library.Toggled then
 					local Smoothness = Aiming.Aimbot_Smoothness
-					ns__mousemoverel((TargetScreen.X - ScreenCenterX) / Smoothness, (TargetScreen.Y - ScreenCenterY) / Smoothness)
+					local PredScreen = AimPosition ~= AimbotTargetPart.Position and select(1, WorldToViewportPoint(AimPosition)) or TargetScreen
+					local DeltaX, DeltaY = PredScreen.X - ScreenCenterX, PredScreen.Y - ScreenCenterY
+					if Aiming.Aimbot_SmoothingMode == "Ease-Out" then
+						local NormFactor = 1 - (1 - 1 / Smoothness) ^ 3
+						DeltaX, DeltaY = DeltaX * NormFactor, DeltaY * NormFactor
+					else
+						DeltaX, DeltaY = DeltaX / Smoothness, DeltaY / Smoothness
+					end
+					ns__mousemoverel(DeltaX, DeltaY)
 				elseif Aiming.Aimbot_Type == "Camera" then
-					local LookVector, Smoothness = (AimbotTargetPart.Position - Camera.CFrame.Position).Unit, Aiming.Aimbot_Smoothness
+					local TargetLookVector = (AimPosition - Camera.CFrame.Position).Unit
+					local Smoothness = Aiming.Aimbot_Smoothness
 					if Smoothness > 1 then
-						LookVector = (Camera.CFrame.LookVector:Lerp(LookVector, 1/Smoothness)).Unit
+						local Alpha = 1 / Smoothness
+						if Aiming.Aimbot_SmoothingMode == "Ease-Out" then
+							Alpha = 1 - (1 - Alpha) ^ 3
+						end
+						TargetLookVector = (Camera.CFrame.LookVector:Lerp(TargetLookVector, Alpha)).Unit
 					end
 
 					local ActiveCamera = GetActiveCamera()
 					local setLookVector = ActiveCamera.setLookVector
 					if setLookVector then
-						setLookVector(ActiveCamera, LookVector)
+						setLookVector(ActiveCamera, TargetLookVector)
 					end
 				end
 				IsLocking = true
@@ -3988,6 +4091,26 @@ function RageBotModule:Update()
 			local Entry = SortedEntries[EntryIndex]
 			local Character = Entry._thirdPersonObject._characterModelHash
 			local TargetCount = self:GetTargets(Entry, Targets, IsPart)
+
+			if Aiming.RageBot_Prediction then
+				local PredCache = MovementCache[Entry._player]
+				if PredCache and #PredCache >= 2 then
+					local Newest, Previous = PredCache[1], PredCache[2]
+					if Newest and Previous and (Newest.Time - Previous.Time) > 0.001 then
+						local Vel = (Newest.Position - Previous.Position) / (Newest.Time - Previous.Time)
+						local Offset = Vel * (2 / 60)
+						for i = 1, TargetCount do
+							if IsPart[i] then
+								Targets[i] = Targets[i].Position + Offset
+								IsPart[i] = false
+							else
+								Targets[i] = Targets[i] + Offset
+							end
+						end
+					end
+				end
+			end
+
 			local NewOrigin, NewTarget, Velocity, HitPart = self:SolveEntry(Targets, TargetCount, IsPart, FireOrigins, BulletSpeed, PenetrationDetection, PenetrationDepth, ScanCache)
 			local HitPartName = self:GetHitPartName(Character, HitPart)
 			if NewOrigin then
@@ -4256,7 +4379,7 @@ RunService.Heartbeat:Connect(function(DeltaTime)
 			Cache[Index + 1] = Cache[Index]
 		end
 
-		Cache[1] = {Position = Character.Head.Position, Time = os.clock()}
+		Cache[1] = {Position = Character.Torso.Position, Time = os.clock()}
 	end)
 
 	if LocalHumanoid and Miscellaneous.Movement_BunnyHop and UserInputService:IsKeyDown(Enum.KeyCode.Space) then
@@ -4278,7 +4401,9 @@ end)
 local repupdate_LastTime, repupdate_ReverseTime
 NetworkClient.send = function(self, Packet, ...)
 	if Packet == "flaguser" or Packet == "debug" or Packet == "logmessage" then
-		return
+		if not Settings.Debug_PassthroughACPackets then
+			return
+		end
 	elseif Packet == "repupdate" then
 		local Position, Angles, BarrelAngles, Time = ...
 		if Miscellaneous.Movement_Speed or Miscellaneous.Movement_Fly or Miscellaneous.Movement_BunnyHop then
