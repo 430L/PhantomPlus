@@ -1235,10 +1235,12 @@ do
                     if Input.UserInputType == Enum.UserInputType.Keyboard then
                         Key = Input.KeyCode.Name
                     elseif Input.UserInputType == Enum.UserInputType.MouseButton2 then
-                        Key = Input.UserInputType.Name
+                        Key = "MB2"
                     elseif Input.UserInputType == Enum.UserInputType.MouseButton1 then
                         Key = "None"
                     end
+
+                    if not Key then return end
 
                     Break = true
                     Picking = false

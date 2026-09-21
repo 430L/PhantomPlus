@@ -141,6 +141,43 @@ local Aiming = {
 	RageBot_FireScanningCount = 8
 }
 
+-- Aimkey input tracking (callback-driven, avoids GetState() in render loop)
+local AimkeyBoundCode = nil
+local AimkeyIsMB2 = false
+local IsAimkeyDown = false
+
+local function UpdateAimkeyBinding(keyName)
+	if not keyName or keyName == "None" or keyName == "" then
+		AimkeyBoundCode = nil
+		AimkeyIsMB2 = false
+	elseif keyName == "MB2" or keyName == "MouseButton2" then
+		AimkeyBoundCode = nil
+		AimkeyIsMB2 = true
+	else
+		AimkeyIsMB2 = false
+		local ok, code = pcall(function() return Enum.KeyCode[keyName] end)
+		AimkeyBoundCode = ok and code or nil
+	end
+	IsAimkeyDown = false
+end
+
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	if AimkeyIsMB2 and input.UserInputType == Enum.UserInputType.MouseButton2 then
+		IsAimkeyDown = true
+	elseif AimkeyBoundCode and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == AimkeyBoundCode then
+		IsAimkeyDown = true
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if AimkeyIsMB2 and input.UserInputType == Enum.UserInputType.MouseButton2 then
+		IsAimkeyDown = false
+	elseif AimkeyBoundCode and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == AimkeyBoundCode then
+		IsAimkeyDown = false
+	end
+end)
+
 local Visuals = {
 	Combat_BulletTracers = false,
 	Combat_BulletTracerColor = Color3.fromRGB(255, 255, 255),
@@ -1869,9 +1906,19 @@ local function BuildAimingTab()
 
 	Aiming_Aimbot:AddToggle("Aimbot_Enabled", {Text = "Aimbot", Default = Aiming.Aimbot_Enabled, Callback = function(Value)
 		Aiming.Aimbot_Enabled = Value
-	end}):AddKeyPicker("Aimbot_Keybind", {Default = Aiming.Aimbot_Keybind, Mode = "Hold", Modes = {"Hold"}, Text = "Aiming Keybind", ChangedCallback = function(Keybind)
-		Aiming.Aimbot_Keybind = Keybind
-	end})
+	end}):AddKeyPicker("Aimbot_Keybind", {Default = Aiming.Aimbot_Keybind, Mode = "Hold", Modes = {"Hold"}, Text = "Aiming Keybind",
+		Callback = function(State)
+			if type(State) == "boolean" then
+				IsAimkeyDown = State
+			elseif type(State) == "string" then
+				UpdateAimkeyBinding(State)
+			end
+		end,
+		ChangedCallback = function(Keybind)
+			Aiming.Aimbot_Keybind = Keybind
+			UpdateAimkeyBinding(Keybind)
+		end
+	})
 
 	local AimbotDependencyBox = Aiming_Aimbot:AddDependencyBox():SetupDependencies({{Toggles.Aimbot_Enabled, true}})
 
@@ -3320,8 +3367,7 @@ local function UpdateAimbot(LocalHeadPosition)
 		end
 
 		local IsLocking = false
-		local AimkeyPicker = Options.Aimbot_Keybind
-		local IsAimkeyActive = Aiming.Aimbot_Type == "Silent" or not AimkeyPicker or AimkeyPicker.Value == "None" or AimkeyPicker:GetState()
+		local IsAimkeyActive = Aiming.Aimbot_Type == "Silent" or not AimkeyBoundCode or IsAimkeyDown
 		if IsSpawned and IsAimkeyActive then
 			local TargetPart, Target, IsTargetVisible, TargetScreen, ClosestScore = nil, nil, false, nil, math.huge
 			local FOVRadius, IsWallCheckOff = ShowFOV and Aiming.Aimbot_FOVRadius or math.huge, not Aiming.Aimbot_WallCheck
