@@ -106,7 +106,7 @@ local IsAimbotTargetVisible = false
 
 local Aiming = {
 	Aimbot_Enabled = false,
-	Aimbot_Keybind = "None",
+	Aimbot_Keybind = "MB2",
 	Aimbot_Type = "None",
 	Aimbot_Part = "Head",
 	Aimbot_Smoothness = 3,
@@ -161,11 +161,15 @@ local function UpdateAimkeyBinding(keyName)
 	IsAimkeyDown = false
 end
 
+UpdateAimkeyBinding(Aiming.Aimbot_Keybind)
+
 UserInputService.InputBegan:Connect(function(input, processed)
-	if processed then return end
 	if AimkeyIsMB2 and input.UserInputType == Enum.UserInputType.MouseButton2 then
 		IsAimkeyDown = true
-	elseif AimkeyBoundCode and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == AimkeyBoundCode then
+		return
+	end
+	if processed then return end
+	if AimkeyBoundCode and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == AimkeyBoundCode then
 		IsAimkeyDown = true
 	end
 end)
@@ -3367,7 +3371,7 @@ local function UpdateAimbot(LocalHeadPosition)
 		end
 
 		local IsLocking = false
-		local IsAimkeyActive = Aiming.Aimbot_Type == "Silent" or not AimkeyBoundCode or IsAimkeyDown
+		local IsAimkeyActive = Aiming.Aimbot_Type == "Silent" or (not AimkeyBoundCode and not AimkeyIsMB2) or IsAimkeyDown
 		if IsSpawned and IsAimkeyActive then
 			local TargetPart, Target, IsTargetVisible, TargetScreen, ClosestScore = nil, nil, false, nil, math.huge
 			local FOVRadius, IsWallCheckOff = ShowFOV and Aiming.Aimbot_FOVRadius or math.huge, not Aiming.Aimbot_WallCheck
